@@ -10,13 +10,13 @@ use share_pool::{SafeFloat, SharePoolDataOperations};
 use sp_runtime::traits::AccountIdConversion;
 use sp_std::marker::PhantomData;
 use substrate_fixed::types::U64F64;
-use subtensor_swap_interface::SwapHandler;
+use subtensor_swap_interface::{Order, SwapHandler};
 
 pub const MIGRATION_NAME: &[u8] = b"migrate_alpha_v2_and_unstake_dust_v1";
 /// Inclusive threshold in TAO rao, valued when the row is processed.
 pub const MAX_DUST_TAO: u64 = 3_000_000;
 /// Positions below this value are deleted without a coldkey payout.
-pub const MIN_PAYOUT_TAO: u64 = 500;
+pub const MIN_PAYOUT_TAO: u64 = 1_000;
 
 /// Retired storage, excluded from metadata. Transitional getters and lazy writes still
 /// understand these keys until the bounded conversion finishes.
@@ -95,9 +95,9 @@ fn remove_share<T: Config>(hotkey: &T::AccountId, coldkey: &T::AccountId, netuid
     Pallet::<T>::maybe_remove_staking_hotkey(hotkey, coldkey);
 }
 
-/// Settle a deleted dust position at its current spot valuation. There is no
-/// AMM swap: sub-rao output cannot be swapped, and the policy burns the captured
-/// whole-rao spot value rather than slippage-dependent execution proceeds.
+/// Settle a deleted dust position at its executable valuation. There is no committed
+/// AMM swap: the policy burns the rounded TAO proceeds that the same fee-free alpha
+/// sale would return at the state observed while processing the row.
 /// Return the position's alpha to the protocol reserve. The caller settles all
 /// corresponding TAO together, in the same storage transaction.
 fn delete_dust<T: Config>(hotkey: &T::AccountId, coldkey: &T::AccountId, netuid: NetUid) {
@@ -236,6 +236,20 @@ fn can_settle_position<T: Config>(
         && Pallet::<T>::ensure_hotkey_covers_collateral(coldkey, hotkey, netuid, alpha).is_ok()
 }
 
+/// Rounded TAO proceeds from executing the same fee-free alpha sale used by an
+/// actual migration payout. Dynamic swaps execute in rollback mode, while stable
+/// subnets use their normal 1:1 conversion. Failed quotes are preserved in V2 so
+/// they cannot stall format conversion or destroy a position whose value is unknown.
+fn executable_tao_value<T: Config>(netuid: NetUid, alpha: AlphaBalance) -> Option<u64> {
+    if SubnetMechanism::<T>::get(netuid) != 1 {
+        return Some(alpha.to_u64());
+    }
+    let order = GetTaoForAlpha::<T>::with_amount(alpha);
+    T::SwapInterface::swap(netuid, order, T::SwapInterface::min_price(), true, true)
+        .ok()
+        .map(|result| result.amount_paid_out.to_u64())
+}
+
 /// Process only work which fits the remaining block weight. Protected positions
 /// complete format conversion without settlement. Other failed settlements leave
 /// the row and cursor unchanged and cannot produce a false completion marker.
@@ -313,26 +327,31 @@ pub fn continue_migration<T: Config>(limit: Weight) -> Weight {
             }
             continue;
         };
+        // Charge the quote before executing it so a row is never inspected beyond
+        // the caller's weight limit, including when the remaining work does not fit.
+        let quote_cost = <T as Config>::WeightInfo::remove_stake();
+        if !used.saturating_add(quote_cost).all_lte(limit) {
+            break;
+        }
+        used.saturating_accrue(quote_cost);
         let alpha =
             Pallet::<T>::get_stake_for_hotkey_and_coldkey_on_subnet(&hotkey, &coldkey, netuid);
-        let value = U64F64::from_num(alpha.to_u64())
-            .saturating_mul(T::SwapInterface::current_alpha_price(netuid));
-        let below_minimum = value < U64F64::from_num(MIN_PAYOUT_TAO);
-        let within_payout_limit =
-            legacy && !below_minimum && value <= U64F64::from_num(MAX_DUST_TAO);
+        let executable_value = executable_tao_value::<T>(netuid, alpha);
+        let below_minimum = executable_value.is_some_and(|value| value < MIN_PAYOUT_TAO);
+        let within_payout_limit = legacy
+            && executable_value
+                .is_some_and(|value| (MIN_PAYOUT_TAO..=MAX_DUST_TAO).contains(&value));
         let settlement_candidate = below_minimum || within_payout_limit;
         let can_settle =
             !settlement_candidate || can_settle_position::<T>(&hotkey, &coldkey, netuid, alpha);
         let dust = below_minimum && can_settle;
         let payout = within_payout_limit && can_settle;
-        let mut cost = if legacy {
-            T::DbWeight::get().reads_writes(8, 8)
-        } else {
-            Weight::zero()
-        };
+        let mut cost = Weight::zero();
+        if legacy {
+            cost.saturating_accrue(T::DbWeight::get().reads_writes(8, 8));
+        }
         let mut flush_allowance = Weight::zero();
         if settlement_candidate {
-            cost.saturating_accrue(<T as Config>::WeightInfo::remove_stake());
             cost.saturating_accrue(Pallet::<T>::staking_hotkeys_walk_actual(&coldkey));
             if netuid.is_root()
                 && payout
@@ -353,7 +372,7 @@ pub fn continue_migration<T: Config>(limit: Weight) -> Weight {
                 convert_row::<T>(&hotkey, &coldkey, netuid);
             }
             if dust {
-                let burn = value.to_num::<u64>();
+                let burn = executable_value.unwrap_or_default();
                 collect_burn::<T>(netuid, burn)?;
                 delete_dust::<T>(&hotkey, &coldkey, netuid);
                 Ok((burn, 0, Weight::zero()))
@@ -547,36 +566,33 @@ mod tests {
     }
 
     #[test]
-    fn candidate_selection_uses_current_spot_price_without_rounding_tao() {
-        for alpha in [2_000_000u64, 2_000_001] {
-            new_test_ext(1).execute_with(|| {
-                let netuid = network();
-                setup_reserves(
-                    netuid,
-                    1_500_000_000_000u64.into(),
-                    1_000_000_000_000u64.into(),
-                );
-                let hot = U256::from(2);
-                let cold = U256::from(3);
-                legacy_position(hot, cold, netuid, alpha);
-                run_batches();
-                assert_eq!(
-                    AlphaV2::<Test>::contains_key((hot, cold, netuid)),
-                    alpha > 2_000_000
-                );
-                assert_eq!(
-                    SubtensorModule::get_stake_for_hotkey_and_coldkey_on_subnet(
-                        &hot, &cold, netuid
-                    ),
-                    if alpha > 2_000_000 {
-                        alpha.into()
-                    } else {
-                        AlphaBalance::ZERO
-                    }
-                );
-                assert!(HasMigrationRun::<Test>::get(MIGRATION_NAME));
-            });
-        }
+    fn candidate_selection_uses_exact_executable_tao() {
+        new_test_ext(1).execute_with(|| {
+            let netuid = network();
+            setup_reserves(
+                netuid,
+                1_500_000_000_000u64.into(),
+                1_000_000_000_000u64.into(),
+            );
+            let hot = U256::from(2);
+            let cold = U256::from(3);
+            let alpha = 2_000_001u64;
+            legacy_position(hot, cold, netuid, alpha);
+            let spot = U64F64::from_num(alpha)
+                .saturating_mul(<Test as Config>::SwapInterface::current_alpha_price(netuid));
+            let executable = executable_tao_value::<Test>(netuid, alpha.into()).expect("quote");
+            assert!(spot > U64F64::from_num(MAX_DUST_TAO));
+            assert!((MIN_PAYOUT_TAO..=MAX_DUST_TAO).contains(&executable));
+
+            run_batches();
+
+            assert!(!AlphaV2::<Test>::contains_key((hot, cold, netuid)));
+            assert_eq!(
+                SubtensorModule::get_stake_for_hotkey_and_coldkey_on_subnet(&hot, &cold, netuid),
+                AlphaBalance::ZERO
+            );
+            assert!(HasMigrationRun::<Test>::get(MIGRATION_NAME));
+        });
     }
 
     #[test]
@@ -586,6 +602,7 @@ mod tests {
             let hot = U256::from(2);
             let cold = U256::from(3);
             let alpha = MAX_DUST_TAO + 1;
+            SubnetMechanism::<Test>::insert(netuid, 0);
             legacy_position(hot, cold, netuid, alpha);
             AlphaV2::<Test>::insert((hot, cold, netuid), SafeFloat::from(1u64));
             TotalHotkeySharesV2::<Test>::insert(hot, netuid, SafeFloat::from(2u64));
@@ -636,6 +653,7 @@ mod tests {
             let netuid = network();
             let hot = U256::from(2);
             let cold = U256::from(3);
+            SubnetMechanism::<Test>::insert(netuid, 0);
             legacy_position(hot, cold, netuid, 1000);
             convert_for_test::<Test>();
             let share = AlphaV2::<Test>::get((hot, cold, netuid));
@@ -645,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn sub_500_rao_positions_are_deleted_and_whole_rao_are_burned() {
+    fn sub_1000_rao_positions_are_deleted_and_whole_rao_are_burned() {
         use sp_runtime::traits::AccountIdConversion;
         new_test_ext(1).execute_with(|| {
             let netuid = network();
@@ -656,7 +674,7 @@ mod tests {
                 SubtensorModule::get_coldkey_balance(&burn),
                 TaoBalance::ZERO
             );
-            for (i, alpha) in [0, 1, 499, 499, 500].into_iter().enumerate() {
+            for (i, alpha) in [0, 1, 499, 999, 1000].into_iter().enumerate() {
                 legacy_position(U256::from(i + 10), U256::from(i + 20), netuid, alpha);
             }
             // A missing destination account must not prevent deletion and burning.
@@ -685,12 +703,12 @@ mod tests {
                     expected.into()
                 );
             }
-            // 0 + 1 + 499 + 499, no coldkey payout.
+            // 0 + 1 + 499 + 999, no coldkey payout.
             assert_eq!(
                 SubtensorModule::get_coldkey_balance(&burn),
-                burn_before + TaoBalance::from(999u64)
+                burn_before + TaoBalance::from(1499u64)
             );
-            // Exactly 500 is paid normally, not deleted by the burn branch.
+            // Exactly 1000 is paid normally, not deleted by the burn branch.
             assert!(
                 SubtensorModule::get_coldkey_balance(&U256::from(24)) > 1_000_000_000u64.into()
             );
@@ -710,6 +728,7 @@ mod tests {
             let hot = U256::from(2);
             let cold = U256::from(3);
             let other = U256::from(4);
+            SubnetMechanism::<Test>::insert(netuid, 0);
             legacy_position(hot, cold, netuid, 499);
             AlphaV2::<Test>::insert((hot, other, netuid), SafeFloat::from(10_000u64));
             retired::TotalHotkeyShares::<Test>::insert(hot, netuid, U64F64::from_num(10_499));
@@ -756,11 +775,13 @@ mod tests {
             let a = network();
             let b = add_dynamic_network(&U256::from(2001), &U256::from(2002));
             setup_reserves(b, 1_000_000_000_000u64.into(), 1_000_000_000_000u64.into());
+            SubnetMechanism::<Test>::insert(a, 0);
+            SubnetMechanism::<Test>::insert(b, 0);
             let account_a = SubtensorModule::get_subnet_account_id(a).expect("subnet a");
             let account_b = SubtensorModule::get_subnet_account_id(b).expect("subnet b");
             add_balance_to_coldkey_account(&account_b, 1_000_000_000_000u64.into());
-            legacy_position(U256::from(2), U256::from(3), a, 249);
-            legacy_position(U256::from(4), U256::from(5), b, 251);
+            legacy_position(U256::from(2), U256::from(3), a, 499);
+            legacy_position(U256::from(4), U256::from(5), b, 501);
             let burn: U256 = <Test as Config>::BurnAccountId::get().into_account_truncating();
             assert_eq!(
                 SubtensorModule::get_coldkey_balance(&burn),
@@ -782,13 +803,13 @@ mod tests {
             )));
             assert_eq!(
                 SubtensorModule::get_coldkey_balance(&account_a),
-                before_a - TaoBalance::from(249u64)
+                before_a - TaoBalance::from(499u64)
             );
             assert_eq!(
                 SubtensorModule::get_coldkey_balance(&account_b),
-                before_b - TaoBalance::from(251u64)
+                before_b - TaoBalance::from(501u64)
             );
-            assert_eq!(SubtensorModule::get_coldkey_balance(&burn), 500u64.into());
+            assert_eq!(SubtensorModule::get_coldkey_balance(&burn), 1000u64.into());
             let transfers: Vec<_> = System::events()
                 .into_iter()
                 .filter_map(|record| {
@@ -805,8 +826,8 @@ mod tests {
                     }
                 })
                 .collect();
-            // No individual sub-ED transfer is sent to the initially empty account.
-            assert_eq!(transfers, vec![TaoBalance::from(500u64)]);
+            // No individual sub-threshold transfer is sent to the initially empty account.
+            assert_eq!(transfers, vec![TaoBalance::from(1000u64)]);
             assert_eq!(<Test as Config>::Currency::total_issuance(), issuance);
         });
     }
@@ -897,17 +918,18 @@ mod tests {
     }
 
     #[test]
-    fn locked_and_collateral_backed_sub_500_rao_positions_are_preserved() {
+    fn locked_and_collateral_backed_sub_1000_rao_positions_are_preserved() {
         new_test_ext(1).execute_with(|| {
             let netuid = network();
+            SubnetMechanism::<Test>::insert(netuid, 0);
             let collateral_hot = U256::from(2);
             let collateral_cold = U256::from(3);
             let locked_hot = U256::from(4);
             let locked_cold = U256::from(5);
-            let protected_alpha = AlphaBalance::from(499u64);
+            let protected_alpha = AlphaBalance::from(999u64);
 
             // Seed an existing V2 row so protection is exercised during the V2 sweep.
-            legacy_position(collateral_hot, collateral_cold, netuid, 499);
+            legacy_position(collateral_hot, collateral_cold, netuid, 999);
             convert_row::<Test>(&collateral_hot, &collateral_cold, netuid);
             let collateral = MinerCollateralState {
                 locked: protected_alpha,
@@ -927,7 +949,7 @@ mod tests {
             });
 
             // Seed legacy dust protected by a conviction lock.
-            legacy_position(locked_hot, locked_cold, netuid, 499);
+            legacy_position(locked_hot, locked_cold, netuid, 999);
             assert_ok!(SubtensorModule::do_lock_stake(
                 &locked_cold,
                 netuid,
@@ -1061,15 +1083,11 @@ mod tests {
     }
 
     #[test]
-    fn v2_cutoff_is_strict_and_fractional_tao_is_not_rounded_up() {
+    fn v2_cutoff_uses_exact_executable_rao() {
         for alpha in [0u64, 1, 2, 998, 999, 1000, 2000] {
             new_test_ext(1).execute_with(|| {
                 let netuid = network();
-                setup_reserves(
-                    netuid,
-                    500_000_000_000u64.into(),
-                    1_000_000_000_000u64.into(),
-                );
+                SubnetMechanism::<Test>::insert(netuid, 0);
                 let hot = U256::from(10);
                 let cold = U256::from(20);
                 legacy_position(hot, cold, netuid, alpha);
@@ -1086,7 +1104,7 @@ mod tests {
                 assert_eq!(SubtensorModule::get_coldkey_balance(&cold), balance);
                 let progress = AlphaV2Migration::<Test>::get().expect("final counters");
                 assert_eq!(progress.deleted, u64::from(alpha < 1000));
-                assert_eq!(progress.burned, if alpha < 1000 { alpha / 2 } else { 0 });
+                assert_eq!(progress.burned, if alpha < 1000 { alpha } else { 0 });
                 assert_eq!(progress.pending_burn, 0);
                 assert_eq!(progress.refunded, 0);
             });
@@ -1151,6 +1169,7 @@ mod tests {
     fn insufficient_burn_account_ed_is_persisted_and_not_reported_complete() {
         new_test_ext(1).execute_with(|| {
             let netuid = network();
+            SubnetMechanism::<Test>::insert(netuid, 0);
             legacy_position(U256::from(2), U256::from(3), netuid, 249);
             convert_for_test::<Test>();
             run_batches();
