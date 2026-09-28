@@ -126,6 +126,7 @@ fn delete_dust<T: Config>(hotkey: &T::AccountId, coldkey: &T::AccountId, netuid:
 
 /// A cursor is saved only after a row's accounting and deletion commit together.
 /// phase: 0 = legacy positions, 1 = leftover denominators, 2 = V2 dust sweep.
+#[crate::freeze_struct("58ba3d23df9e1568")]
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, Default)]
 pub struct Progress {
     pub phase: u8,
