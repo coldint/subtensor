@@ -12,7 +12,7 @@ const WS_ENDPOINT = process.env.WS_ENDPOINT ?? "ws://127.0.0.1:9944";
 const ETH_RPC_ENDPOINT = process.env.ETH_RPC_ENDPOINT ?? "http://127.0.0.1:9944";
 const RUN_ID = process.env.TOTAL_ISSUANCE_RUN_ID ?? `run${Date.now()}p${process.pid}`;
 const FUND_SOURCE_URI = process.env.TOTAL_ISSUANCE_FUND_SOURCE_URI ?? "//Alice";
-const FUND_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_FUND_AMOUNT ?? "5000000000000");
+const EVM_GAS_PRICE = BigInt(process.env.TOTAL_ISSUANCE_EVM_GAS_PRICE ?? "10");
 const STAKE_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_STAKE_AMOUNT ?? "10000000000");
 const TRANSFER_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_TRANSFER_AMOUNT ?? "1000000000");
 const NEURON_BURN = BigInt(process.env.TOTAL_ISSUANCE_NEURON_BURN ?? "1000000");
@@ -121,24 +121,20 @@ function assertMetadataAvailable() {
 async function fundTestAccounts() {
   const evmWallet = getEvmWallet();
   const accounts = [
-    [stakeColdkey.address, "stake coldkey", FUND_AMOUNT],
-    [stakeDest.address, "stake destination", FUND_AMOUNT],
-    [burnColdkey.address, "burn coldkey", FUND_AMOUNT],
-    [subnetOwner.address, "subnet owner", FUND_AMOUNT],
-    [replacementOwner.address, "replacement owner", FUND_AMOUNT],
-    [
-      evmAddressToSs58(evmWallet.address),
-      "EVM mapped account",
-      BigInt(process.env.TOTAL_ISSUANCE_EVM_FUND_AMOUNT ?? "1000000000000000"),
-    ],
-  ] as const;
-  const calls = accounts.map(([address, , amount]) => balancesTransfer(address, amount));
+    [stakeColdkey.address, "stake coldkey"],
+    [stakeDest.address, "stake destination"],
+    [burnColdkey.address, "burn coldkey"],
+    [subnetOwner.address, "subnet owner"],
+    [replacementOwner.address, "replacement owner"],
+    [evmAddressToSs58(evmWallet.address), "EVM mapped account"],
+  ];
+  const calls = accounts.map(([address]) => balancesTransfer(address, FUND_AMOUNT));
   await signedBatch(fundSource, calls, "batch transfer test funding");
   await assertIssuanceMatch("after setup funding transfers");
 
-  for (const [address, label, amount] of accounts) {
+  for (const [address, label] of accounts) {
     const free = (await api.query.system.account(address)).data.free.toBigInt();
-    assert.ok(free >= amount, `${label} funding failed: free=${free}`);
+    assert.ok(free >= FUND_AMOUNT, `${label} funding failed: free=${free}`);
     console.log(`${label} funded:`, address, free.toString());
   }
 }
@@ -303,7 +299,7 @@ async function exerciseEvmContractFees() {
   await assertIssuanceMatch("before EVM deployment");
 
   const factory = new ethers.ContractFactory([], SIMPLE_RETURN_42_BYTECODE, connectedWallet);
-  const contract = await factory.deploy({ gasLimit: 150_000 });
+  const contract = await factory.deploy({ gasLimit: 150_000, gasPrice: EVM_GAS_PRICE });
   const deployReceipt = await contract.deploymentTransaction().wait();
   assert.equal(deployReceipt.status, 1, "contract deployment failed");
   await assertIssuanceMatch("after EVM contract deployment");
@@ -314,6 +310,7 @@ async function exerciseEvmContractFees() {
       to: contractAddress,
       data: "0x",
       gasLimit: 50_000,
+      gasPrice: EVM_GAS_PRICE,
     });
     const receipt = await tx.wait();
     assert.equal(receipt.status, 1, `EVM contract call ${index} failed`);
