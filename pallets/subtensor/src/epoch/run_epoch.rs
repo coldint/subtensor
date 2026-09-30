@@ -263,12 +263,7 @@ impl<T: Config> Pallet<T> {
         // Mask if: the last tempo block happened *before* the registration block
         // ==> last_tempo <= registered
         // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
-        let lms = LastMechansimStepBlock::<T>::get(netuid);
-        let last_tempo: u64 = if lms == 0 {
-            current_block.saturating_sub(tempo)
-        } else {
-            lms.saturating_add(1)
-        };
+        let last_tempo = Self::bond_cutoff_block(netuid, current_block, tempo);
         let recently_registered: Vec<bool> = block_at_registration
             .iter()
             .map(|registered| last_tempo <= *registered)
@@ -650,10 +645,42 @@ impl<T: Config> Pallet<T> {
     ///
     /// * `debug`: Print debugging outputs.
     ///
+    pub(crate) fn bond_cutoff_block(netuid: NetUid, current_block: u64, tempo: u64) -> u64 {
+        if let Some(last_yuma) = LastYumaStepBlock::<T>::get(netuid) {
+            return last_yuma.saturating_add(1);
+        }
+        let last_step = LastMechansimStepBlock::<T>::get(netuid);
+        if last_step == 0 {
+            current_block.saturating_sub(tempo)
+        } else {
+            last_step.saturating_add(1)
+        }
+    }
+
     pub fn epoch_mechanism(
         netuid: NetUid,
         mecid: MechId,
         rao_emission: AlphaBalance,
+    ) -> EpochOutput<T> {
+        let dividends = AlphaBalance::from(u64::from(rao_emission) / 2);
+        Self::epoch_mechanism_with_budgets(
+            netuid,
+            mecid,
+            rao_emission,
+            rao_emission.saturating_sub(dividends),
+            dividends,
+            rao_emission,
+        )
+    }
+
+    /// The no-validator fallback may redirect local rewards, but never root rewards.
+    pub(crate) fn epoch_mechanism_with_budgets(
+        netuid: NetUid,
+        mecid: MechId,
+        rao_emission: AlphaBalance,
+        mining_budget: AlphaBalance,
+        dividend_budget: AlphaBalance,
+        fallback_budget: AlphaBalance,
     ) -> EpochOutput<T> {
         // Calculate netuid storage index
         let netuid_index = Self::get_mechanism_storage_index(netuid, mecid);
@@ -931,13 +958,17 @@ impl<T: Config> Pallet<T> {
                 .collect();
             inplace_normalize_64(&mut incentive_report);
             let incentive = vec_fixed64_to_fixed32(incentive_report);
-            let epoch_budget = u64::from(rao_emission);
-            let validator_budget = if dividend_shares.iter().any(|share| *share > 0) {
-                epoch_budget / 2
+            let has_validators = dividend_shares.iter().any(|share| *share > 0);
+            let validator_budget = if has_validators {
+                u64::from(dividend_budget)
             } else {
                 0
             };
-            let miner_budget = epoch_budget.saturating_sub(validator_budget);
+            let miner_budget = if has_validators {
+                u64::from(mining_budget)
+            } else {
+                u64::from(fallback_budget)
+            };
             null_payouts = Some((
                 apportion_units(&incentive_shares, miner_budget),
                 apportion_units(&dividend_shares, validator_budget),
@@ -1003,12 +1034,7 @@ impl<T: Config> Pallet<T> {
                 // Mask if: the last tempo block happened *before* the registration block
                 // ==> last_tempo <= registered
                 // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
-                let lms = LastMechansimStepBlock::<T>::get(netuid);
-                let last_tempo: u64 = if lms == 0 {
-                    current_block.saturating_sub(tempo)
-                } else {
-                    lms.saturating_add(1)
-                };
+                let last_tempo = Self::bond_cutoff_block(netuid, current_block, tempo);
                 bonds = scalar_vec_mask_sparse_matrix(
                     &bonds,
                     last_tempo,
@@ -1053,12 +1079,7 @@ impl<T: Config> Pallet<T> {
                 // Mask if: the last tempo block happened *before* the registration block
                 // ==> last_tempo <= registered
                 // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
-                let lms = LastMechansimStepBlock::<T>::get(netuid);
-                let last_tempo: u64 = if lms == 0 {
-                    current_block.saturating_sub(tempo)
-                } else {
-                    lms.saturating_add(1)
-                };
+                let last_tempo = Self::bond_cutoff_block(netuid, current_block, tempo);
                 bonds = scalar_vec_mask_sparse_matrix(
                     &bonds,
                     last_tempo,

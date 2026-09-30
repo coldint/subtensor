@@ -347,6 +347,7 @@ impl<T: Config> Pallet<T> {
         MinerBurned::<T>::remove(netuid);
         BlocksSinceLastStep::<T>::remove(netuid);
         LastMechansimStepBlock::<T>::remove(netuid);
+        LastYumaStepBlock::<T>::remove(netuid);
         LastAdjustmentBlock::<T>::remove(netuid);
         ServingRateLimit::<T>::remove(netuid);
         Rho::<T>::remove(netuid);

@@ -3160,36 +3160,36 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_increase_mult",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2331,
-        "end_line": 2369,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2329-L2369",
+        "line": 2332,
+        "end_line": 2370,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2330-L2370",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_half_life",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2289,
-        "end_line": 2325,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2287-L2325",
+        "line": 2290,
+        "end_line": 2326,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2288-L2326",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_lock_share",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2455,
-        "end_line": 2488,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2453-L2488",
+        "line": 2456,
+        "end_line": 2489,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2454-L2489",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_drain_ratio",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2498,
-        "end_line": 2537,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2496-L2537",
+        "line": 2499,
+        "end_line": 2538,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2497-L2538",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3313,18 +3313,18 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2375,
-        "end_line": 2393,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2373-L2393",
+        "line": 2376,
+        "end_line": 2394,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2374-L2394",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_auto_lock_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2399,
-        "end_line": 2417,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2397-L2417",
+        "line": 2400,
+        "end_line": 2418,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2398-L2418",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3435,9 +3435,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_mechanism_count",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1993,
-        "end_line": 2013,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1991-L2013",
+        "line": 1994,
+        "end_line": 2014,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1991-L2014",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3693,9 +3693,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_subnet_emission_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2427,
-        "end_line": 2445,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2425-L2445",
+        "line": 2428,
+        "end_line": 2446,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2426-L2446",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -4689,9 +4689,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_trim_to_max_allowed_uids",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2047,
-        "end_line": 2067,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2045-L2067",
+        "line": 2048,
+        "end_line": 2068,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2046-L2068",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]

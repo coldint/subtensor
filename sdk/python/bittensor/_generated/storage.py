@@ -205,6 +205,7 @@ class SubtensorModule:
     MinerBurned = Item('SubtensorModule', 'MinerBurned', 'FixedU128')
     BlocksSinceLastStep = Item('SubtensorModule', 'BlocksSinceLastStep', 'u64')
     LastMechansimStepBlock = Item('SubtensorModule', 'LastMechansimStepBlock', 'u64')
+    LastYumaStepBlock = Item('SubtensorModule', 'LastYumaStepBlock', 'u64')
     SubnetOwner = Item('SubtensorModule', 'SubnetOwner', 'AccountId32')
     SubnetOwnerHotkey = Item('SubtensorModule', 'SubnetOwnerHotkey', 'AccountId32')
     RecycleOrBurn = Item('SubtensorModule', 'RecycleOrBurn', 'RecycleOrBurnEnum')

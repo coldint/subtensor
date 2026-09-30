@@ -491,6 +491,9 @@ impl<T: Config> Pallet<T> {
                 pending_owner_cut,
             );
             LastMechansimStepBlock::<T>::insert(netuid, current_block);
+            if current_block > 0 && Self::get_epoch_consensus(netuid) == EpochConsensus::Yuma {
+                LastYumaStepBlock::<T>::insert(netuid, current_block);
+            }
         }
     }
 
@@ -951,13 +954,15 @@ impl<T: Config> Pallet<T> {
         );
 
         let tao_weight = Self::get_tao_weight();
-        let total_alpha_minus_owner_cut = pending_server_alpha
-            .saturating_add(pending_validator_alpha)
-            .saturating_add(pending_root_alpha);
 
         // Run the epoch, using the alpha going to both the servers and the validators.
         let hotkey_emission: Vec<(T::AccountId, AlphaBalance, AlphaBalance)> =
-            Self::epoch_with_mechanisms(netuid, total_alpha_minus_owner_cut);
+            Self::epoch_with_mechanism_budgets(
+                netuid,
+                pending_server_alpha,
+                pending_validator_alpha,
+                pending_root_alpha,
+            );
         log::debug!("hotkey_emission: {hotkey_emission:?}");
 
         // Compute the pending validator alpha.

@@ -2482,6 +2482,10 @@ pub mod pallet {
     pub type LastMechansimStepBlock<T> =
         StorageMap<_, Identity, NetUid, u64, ValueQuery, DefaultLastMechanismStepBlock<T>>;
 
+    /// Last epoch that actually updated bonds. Frozen while Null consensus runs.
+    #[pallet::storage]
+    pub type LastYumaStepBlock<T> = StorageMap<_, Identity, NetUid, u64, OptionQuery>;
+
     /// MAP ( netuid ) --> subnet_owner
     #[pallet::storage]
     pub type SubnetOwner<T: Config> =

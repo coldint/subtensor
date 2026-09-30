@@ -644,3 +644,39 @@ pub(super) fn setup_mechanism_weight_benchmark<T: Config>(
 
     (netuid, hotkey, uids, weight_values, salt, version_key)
 }
+
+/// Fill Null admission to both quotas with distinct eligible validators so a
+/// leading full-row submission measures stake comparisons and eviction writes.
+pub(super) fn setup_null_commit_queue<T: Config>(netuid: NetUid, winner: &T::AccountId) {
+    use scale_info::prelude::collections::VecDeque;
+    Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
+    MechanismCountCurrent::<T>::insert(netuid, subtensor_runtime_common::MechId::from(1));
+    Subtensor::<T>::set_max_allowed_uids(netuid, crate::subnets::mechanism::NULL_UID_BUDGET);
+    Subtensor::<T>::set_stake_threshold(0);
+    Subtensor::<T>::increase_stake_for_hotkey_and_coldkey_on_subnet(
+        winner,
+        winner,
+        netuid,
+        1_000_000_000u64.into(),
+    );
+    let epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
+    let mut queue = VecDeque::new();
+    for seed in 0..NULL_COMMIT_QUEUE_COUNT {
+        let hotkey: T::AccountId = account("null_queued", seed as u32, 0);
+        let uid = Subtensor::<T>::get_subnetwork_n(netuid);
+        Subtensor::<T>::append_neuron(netuid, &hotkey, 0);
+        Subtensor::<T>::set_validator_permit_for_uid(netuid, uid, true);
+        Subtensor::<T>::increase_stake_for_hotkey_and_coldkey_on_subnet(
+            &hotkey,
+            &hotkey,
+            netuid,
+            1u64.into(),
+        );
+        let payload: BoundedVec<u8, ConstU32<MAX_CRV3_COMMIT_SIZE_BYTES>> =
+            vec![0u8; NULL_COMMIT_QUEUE_BYTES / NULL_COMMIT_QUEUE_COUNT]
+                .try_into()
+                .unwrap();
+        queue.push_back((hotkey, 0, payload, seed as u64));
+    }
+    TimelockedWeightCommits::<T>::insert(NetUidStorageIndex::from(netuid), epoch, queue);
+}

@@ -56,9 +56,11 @@ export default function Page() {
             exceed their epoch budget. Fractional entitlements are not carried to later epochs.
           </p>
           <p>
-            Null timelocked ciphertexts can be up to 128 KiB, leaving room above a full 16,000-entry
-            row. Queues share byte and count limits across mechanisms to bound storage and reveal
-            work. Yuma retains its 5,000-byte admission limit.
+            Null timelocked ciphertexts can be up to 128 KiB divided by the mechanism count,
+            leaving room above a full row at the corresponding UID ceiling. Queues share byte and
+            count limits across mechanisms, replace a hotkey’s own pending row, and allow the
+            leading eligible validator to displace lower-priority commits. Mode changes wait for
+            pending commits to drain. Yuma retains its 5,000-byte admission limit.
           </p>
           <pre className={styles.code_block}>{`# Subnet owner: switch, then raise capacity
 btcli hparams set --netuid 1 --name epoch_consensus --value Null

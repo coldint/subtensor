@@ -23,7 +23,8 @@ skips consensus and bond calculations and does not write bond storage.
 With eligible validator stake, half the epoch budget goes to validator dividends,
 proportional to that stake. The miner budget receives the other half, including the
 extra atomic unit when the epoch budget is odd. With no eligible validator stake,
-the entire budget goes to miners. Wide integer arithmetic allocates each budget in
+the local server and validator budget goes to miners. Unassignable root rewards
+are recycled separately and are never added to that miner budget. Wide integer arithmetic allocates each budget in
 UID order using cumulative proportional shares. Each payout is the floor or ceiling
 of its exact share; their sum equals the budget. A zero-weight UID receives zero.
 No fractional entitlement carries forward. Reported u16 incentive and dividend
@@ -46,6 +47,12 @@ Use the existing owner trimming call to prune explicitly before switching. Switc
 never silently deletes participants; once allowed, it also lowers configured capacity
 to the Yuma ceiling. The minimum allowed UIDs must fit the selected ceiling too.
 Owner authentication, admin windows and hyperparameter rate limits apply.
+Mode changes, and mechanism-count changes in Null, require pending timelocked
+commits to drain. If necessary, disable new commit-reveal submissions and wait for
+pending commits to reveal or expire before switching. Frozen bonds retain the last
+Yuma epoch's registration cutoff, so replaced miners cannot inherit old bonds.
+The mechanism-count call includes the storage cost of checking pending queues;
+its standard 100-byte fee baseline increases from 192,781 to 299,031 rao.
 
 ## Exact integer weights
 
@@ -76,9 +83,14 @@ available and keeps its scaling and clipping behavior.
 
 `set` automatically selects plaintext or timelocked submission according to subnet
 configuration. Timelocked rows auto-reveal using drand; they need no manual reveal.
-Null allows ciphertexts up to 128 KiB. The shared queue per subnet epoch is bounded
-to 256 KiB and 64 commits across all mechanisms, with the existing ten-commit
-per-hotkey limit. Queue saturation rejects new commits. Yuma keeps its 5,000-byte
+Null allows ciphertexts up to `floor(128 KiB / mechanism_count)`, leaving room
+above a full row at the corresponding UID ceiling. The shared queue per subnet
+epoch is bounded to 256 KiB and 64 commits across all mechanisms. Each hotkey can
+have one pending row per mechanism; resubmitting replaces that row. When full,
+a higher-priority eligible validator can displace lower-priority rows. Priority
+uses stake with ties resolved by first UID; ineligible hotkeys rank last.
+The leading validator can admit a full row for every mechanism even if junk
+commits previously filled the queue. Other commits may receive `CommitQueueFull`. Yuma keeps its 5,000-byte
 ciphertext limit. These limits include encryption and serialization overhead.
 
 ## Operational cost

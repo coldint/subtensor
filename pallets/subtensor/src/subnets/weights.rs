@@ -379,26 +379,29 @@ impl<T: Config> Pallet<T> {
         let cur_epoch = Self::current_epoch_with_lookahead(netuid);
 
         if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
-            // Admission bounds aggregate reveal work, including every mechanism.
-            let mut queued_bytes = commit.len();
-            let mut queued_count = 1usize;
-            for mechanism in 0..u8::from(Self::get_current_mechanism_count(netuid)) {
-                let index = Self::get_mechanism_storage_index(netuid, mechanism.into());
-                for (_, _, ciphertext, _) in TimelockedWeightCommits::<T>::get(index, cur_epoch) {
-                    queued_bytes = queued_bytes.saturating_add(ciphertext.len());
-                    queued_count = queued_count.saturating_add(1);
-                }
-            }
-            ensure!(
-                queued_bytes <= NULL_COMMIT_QUEUE_BYTES && queued_count <= NULL_COMMIT_QUEUE_COUNT,
-                Error::<T>::CommitQueueFull
-            );
-        } else {
-            ensure!(
-                commit.len() <= YUMA_COMMIT_SIZE_BYTES as usize,
-                Error::<T>::CommitPayloadTooLarge
-            );
+            let commit_hash = BlakeTwo256::hash(&commit);
+            Self::enqueue_null_timelock(
+                &who,
+                netuid,
+                mecid,
+                commit,
+                cur_block,
+                cur_epoch,
+                reveal_round,
+            )?;
+            Self::deposit_event(Event::TimelockedWeightsCommitted(
+                who.clone(),
+                netuid_index,
+                commit_hash,
+                reveal_round,
+            ));
+            Self::set_last_update_for_uid(netuid_index, neuron_uid, commit_block);
+            return Ok(());
         }
+        ensure!(
+            commit.len() <= YUMA_COMMIT_SIZE_BYTES as usize,
+            Error::<T>::CommitPayloadTooLarge
+        );
 
         TimelockedWeightCommits::<T>::try_mutate(
             netuid_index,
@@ -435,6 +438,140 @@ impl<T: Config> Pallet<T> {
                 Ok(())
             },
         )
+    }
+
+    /// Exact eligibility and stake ordering used by Null epochs, computed only
+    /// for the bounded set of queued hotkeys. UID order breaks stake ties.
+    fn null_commit_priority(
+        netuid: NetUid,
+        who: &T::AccountId,
+        owner_uid: Option<u16>,
+    ) -> (
+        bool,
+        substrate_fixed::types::I64F64,
+        core::cmp::Reverse<u16>,
+    ) {
+        use substrate_fixed::types::I64F64;
+        let Ok(uid) = Self::get_uid_for_net_and_hotkey(netuid, who) else {
+            return (false, I64F64::from(0), core::cmp::Reverse(u16::MAX));
+        };
+        if owner_uid != Some(uid) && !Self::get_validator_permit_for_uid(netuid, uid) {
+            return (false, I64F64::from(0), core::cmp::Reverse(uid));
+        }
+        let alpha =
+            I64F64::saturating_from_num(Self::get_inherited_for_hotkey_on_subnet(who, netuid));
+        let tao =
+            I64F64::saturating_from_num(Self::get_tao_inherited_for_hotkey_on_subnet(who, netuid));
+        let stake = alpha.saturating_add(
+            tao.saturating_mul(I64F64::saturating_from_num(Self::get_tao_weight())),
+        );
+        let eligible = stake > I64F64::from(0)
+            && (owner_uid == Some(uid) || fixed64_to_u64(stake) >= Self::get_stake_threshold());
+        (
+            eligible,
+            if eligible { stake } else { I64F64::from(0) },
+            core::cmp::Reverse(uid),
+        )
+    }
+
+    /// Keep one pending row per hotkey/mechanism and preempt lower-priority
+    /// rows under pressure. The current winning validator can always admit
+    /// one full row per mechanism: its combined payload is at most 128 KiB.
+    /// Stage every change before writing, so rejection leaves queues intact.
+    fn enqueue_null_timelock(
+        who: &T::AccountId,
+        netuid: NetUid,
+        mecid: MechId,
+        commit: BoundedVec<u8, ConstU32<MAX_CRV3_COMMIT_SIZE_BYTES>>,
+        block: u64,
+        epoch: u64,
+        reveal_round: u64,
+    ) -> DispatchResult {
+        let count = usize::from(u8::from(Self::get_current_mechanism_count(netuid)));
+        let payload_limit = (MAX_CRV3_COMMIT_SIZE_BYTES as usize)
+            .checked_div(count)
+            .ok_or(Error::<T>::InvalidValue)?;
+        ensure!(
+            commit.len() <= payload_limit,
+            Error::<T>::CommitPayloadTooLarge
+        );
+        // Always probe all mechanism indices: this gives admission one fixed
+        // benchmarked envelope independent of the owner's current count.
+        let mut queues =
+            (0..usize::from(crate::subnets::mechanism::MAX_MECHANISM_COUNT_PER_SUBNET))
+                .map(|mechanism| {
+                    let index = Self::get_mechanism_storage_index(netuid, (mechanism as u8).into());
+                    (index, TimelockedWeightCommits::<T>::get(index, epoch))
+                })
+                .collect::<Vec<_>>();
+        let current = queues
+            .get_mut(usize::from(u8::from(mecid)))
+            .ok_or(Error::<T>::MechanismDoesNotExist)?;
+        current.1.retain(|(account, ..)| account != who);
+        current
+            .1
+            .push_back((who.clone(), block, commit, reveal_round));
+        let mut bytes = queues
+            .iter()
+            .flat_map(|(_, q)| q.iter())
+            .fold(0usize, |sum, (_, _, ciphertext, _)| {
+                sum.saturating_add(ciphertext.len())
+            });
+        let mut entries = queues
+            .iter()
+            .fold(0usize, |sum, (_, q)| sum.saturating_add(q.len()));
+        let mut evicted = BTreeSet::new();
+        if bytes > NULL_COMMIT_QUEUE_BYTES || entries > NULL_COMMIT_QUEUE_COUNT {
+            let owner_uid = Self::get_owner_uid(netuid);
+            let incoming = Self::null_commit_priority(netuid, who, owner_uid);
+            let mut priorities = sp_std::collections::btree_map::BTreeMap::new();
+            let mut candidates = Vec::new();
+            for (mechanism, (_, queue)) in queues.iter().enumerate() {
+                for (position, (account, _, ciphertext, _)) in queue.iter().enumerate() {
+                    if account == who {
+                        continue;
+                    }
+                    let priority = *priorities
+                        .entry(account.clone())
+                        .or_insert_with(|| Self::null_commit_priority(netuid, account, owner_uid));
+                    if priority < incoming {
+                        candidates.push((priority, mechanism, position, ciphertext.len()));
+                    }
+                }
+            }
+            candidates.sort_by_key(|entry| entry.0);
+            for (_, mechanism, position, len) in candidates {
+                if bytes <= NULL_COMMIT_QUEUE_BYTES && entries <= NULL_COMMIT_QUEUE_COUNT {
+                    break;
+                }
+                bytes = bytes.saturating_sub(len);
+                entries = entries.saturating_sub(1);
+                evicted.insert((mechanism, position));
+            }
+        }
+        ensure!(
+            bytes <= NULL_COMMIT_QUEUE_BYTES && entries <= NULL_COMMIT_QUEUE_COUNT,
+            Error::<T>::CommitQueueFull
+        );
+        for (mechanism, (index, mut queue)) in queues.into_iter().enumerate() {
+            let mut position = 0usize;
+            queue.retain(|_| {
+                let keep = !evicted.contains(&(mechanism, position));
+                position = position.saturating_add(1);
+                keep
+            });
+            // Avoid rewriting unchanged queues, including empty mechanisms.
+            if usize::from(u8::from(mecid)) == mechanism
+                || evicted.iter().any(|(m, _)| *m == mechanism)
+            {
+                if queue.is_empty() {
+                    TimelockedWeightCommits::<T>::remove(index, epoch);
+                } else {
+                    TimelockedWeightCommits::<T>::insert(index, epoch, queue);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The implementation for revealing committed weights.

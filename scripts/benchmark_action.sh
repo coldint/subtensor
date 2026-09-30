@@ -16,6 +16,16 @@ PATCH_DIR="$ROOT_DIR/.bench_patch"
 THRESHOLD="${THRESHOLD:-75}"
 STEPS="${STEPS:-50}"
 REPEAT="${REPEAT:-20}"
+EXTRINSICS="${EXTRINSICS:-*}"
+# Manual feature-branch reference runs may carry an explicit focus manifest.
+# Scheduled/default-branch and PR-label runs retain the full-suite behavior.
+if [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" &&
+      "${GITHUB_REF_NAME:-}" != "${GITHUB_DEFAULT_BRANCH:-main}" &&
+      -f "$ROOT_DIR/.maintain/benchmark-focus.json" ]]; then
+  PALLET_DIRS="${PALLET_DIRS:-$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["pallet_dirs"]))' "$ROOT_DIR/.maintain/benchmark-focus.json")}"
+  EXTRINSICS=$(python3 -c 'import json,sys; print(",".join(json.load(open(sys.argv[1]))["extrinsics"]))' "$ROOT_DIR/.maintain/benchmark-focus.json")
+  echo "Manual branch reference focus: $PALLET_DIRS / $EXTRINSICS"
+fi
 # Utility batches are low-amplitude microbenchmarks; median-slopes avoids noisy intercept drift.
 UTILITY_OUTPUT_ANALYSIS="${UTILITY_OUTPUT_ANALYSIS:-median-slopes}"
 
@@ -92,7 +102,7 @@ for pallet in "${!OUTPUTS[@]}"; do
     --genesis-builder-preset=benchmark \
     --wasm-execution=compiled \
     --pallet="$pallet" \
-    --extrinsic="*" \
+    --extrinsic="$EXTRINSICS" \
     --steps="$STEPS" \
     --repeat="$REPEAT" \
     --no-storage-info \
@@ -102,6 +112,26 @@ for pallet in "${!OUTPUTS[@]}"; do
     --output="$tmp" \
     --template="$TEMPLATE" 2>&1; then
     SUMMARY+=("$pallet: FAILED"); FAILED=1; rm -f "$tmp"; continue
+  fi
+
+  # A filtered reference run measures only requested methods. Merge those
+  # methods into a temporary complete file before comparison so unrelated
+  # methods are neither reported as removed nor included in the patch.
+  if [[ "$EXTRINSICS" != "*" && -f "$committed" ]]; then
+    merged=$(mktemp)
+    cp "$committed" "$merged"
+    measured_methods=()
+    while IFS= read -r method; do measured_methods+=("$method"); done < <(
+      python3 - "$tmp" <<'PY_METHODS'
+import re
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    print("\n".join(dict.fromkeys(re.findall(r"(?m)^\s*fn\s+(\w+)\(", source.read()))))
+PY_METHODS
+    )
+    (( ${#measured_methods[@]} > 0 )) || die "filtered benchmark output has no methods"
+    selective_patch_weights_file "$merged" "$tmp" "${measured_methods[@]}"
+    mv "$merged" "$tmp"
   fi
 
   if [[ ! -f "$committed" ]]; then

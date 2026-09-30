@@ -1,0 +1,18 @@
+{
+  "pallet_dirs": [
+    "subtensor",
+    "admin-utils"
+  ],
+  "extrinsics": [
+    "block_step",
+    "block_step_yuma",
+    "commit_crv3_mechanism_weights_null",
+    "commit_timelocked_mechanism_weights_null",
+    "commit_timelocked_weights_null",
+    "sudo_trim_to_max_allowed_uids",
+    "sudo_set_epoch_consensus",
+    "sudo_set_mechanism_count",
+    "dissolve_network",
+    "root_dissolve_network"
+  ]
+}

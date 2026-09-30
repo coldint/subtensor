@@ -241,13 +241,14 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "CommitPayloadTooLarge": (
         "The encrypted weight commit exceeds the subnet's consensus payload limit. "
-        "Yuma accepts at most 5,000 bytes; Null accepts at most 128 KiB. "
+        "Yuma accepts at most 5,000 bytes; Null accepts at most floor(128 KiB / mechanism_count). "
         "Reduce the submitted weight row or check the subnet's epoch_consensus setting."
     ),
     "CommitQueueFull": (
         "The subnet's Null timelock queue has reached its shared per-epoch limit of "
         "256 KiB or 64 commits across emission mechanisms. Wait for the next epoch "
-        "before submitting another commit."
+        "before submitting another commit; the leading eligible validator can preempt "
+        "lower-priority rows."
     ),
     "CommitRevealDisabled": (
         "A weight commit or reveal was submitted on a subnet where commit-reveal is turned off. "

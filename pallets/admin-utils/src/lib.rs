@@ -1414,7 +1414,7 @@ pub mod pallet {
         #[pallet::call_index(111)]
         #[pallet::weight(
             <T as pallet::Config>::WeightInfo::sudo_set_epoch_consensus()
-                .saturating_add(<T as frame_system::Config>::DbWeight::get().reads_writes(6, 2))
+                .saturating_add(<T as frame_system::Config>::DbWeight::get().reads_writes(25, 3))
         )]
         pub fn sudo_set_epoch_consensus(
             origin: OriginFor<T>,
@@ -1989,7 +1989,8 @@ pub mod pallet {
 
         /// Sets the desired number of mechanisms in a subnet
         #[pallet::call_index(76)]
-        #[pallet::weight(<T as Config>::WeightInfo::sudo_set_mechanism_count())]
+        #[pallet::weight(<T as Config>::WeightInfo::sudo_set_mechanism_count()
+            .saturating_add(T::DbWeight::get().reads(17)))]
         pub fn sudo_set_mechanism_count(
             origin: OriginFor<T>,
             netuid: NetUid,

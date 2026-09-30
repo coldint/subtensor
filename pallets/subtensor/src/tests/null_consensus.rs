@@ -346,21 +346,23 @@ fn null_consensus_commit_queue_budget_is_shared_by_mechanisms() {
             MechId::from(2)
         ));
         let version = SubtensorModule::get_commit_reveal_weights_version();
-        for mechanism in 0..2u8 {
-            assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
-                RuntimeOrigin::signed(U256::from(0)),
-                netuid,
-                mechanism.into(),
-                vec![0u8; MAX_CRV3_COMMIT_SIZE_BYTES as usize]
-                    .try_into()
-                    .unwrap(),
-                1000,
-                version
-            ));
+        for uid in 0..2u16 {
+            for mechanism in 0..2u8 {
+                assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
+                    RuntimeOrigin::signed(U256::from(uid)),
+                    netuid,
+                    mechanism.into(),
+                    vec![0u8; MAX_CRV3_COMMIT_SIZE_BYTES as usize / 2]
+                        .try_into()
+                        .unwrap(),
+                    1000,
+                    version,
+                ));
+            }
         }
         assert_noop!(
             SubtensorModule::do_commit_timelocked_mechanism_weights(
-                RuntimeOrigin::signed(U256::from(1)),
+                RuntimeOrigin::signed(U256::from(2)),
                 netuid,
                 MechId::MAIN,
                 vec![0u8; 1].try_into().unwrap(),
@@ -390,6 +392,349 @@ fn null_consensus_yuma_keeps_legacy_ciphertext_limit() {
                 SubtensorModule::get_commit_reveal_weights_version()
             ),
             Error::<Test>::CommitPayloadTooLarge
+        );
+    });
+}
+
+#[test]
+fn null_timelock_winner_preempts_junk_and_replaces_own_row() {
+    use frame_support::assert_noop;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        SubtensorModule::set_commit_reveal_weights_enabled(netuid, true);
+        let version = SubtensorModule::get_commit_reveal_weights_version();
+        let submit = |uid, byte| {
+            SubtensorModule::do_commit_timelocked_mechanism_weights(
+                RuntimeOrigin::signed(U256::from(uid)),
+                netuid,
+                MechId::MAIN,
+                vec![byte; MAX_CRV3_COMMIT_SIZE_BYTES as usize]
+                    .try_into()
+                    .unwrap(),
+                1000,
+                version,
+            )
+        };
+        assert_ok!(submit(2u16, 2u8));
+        assert_ok!(submit(3u16, 3u8));
+        // Two junk rows fill the byte quota. Neither has a validator permit.
+        assert_ok!(submit(0u16, 0u8));
+        assert_ok!(submit(1u16, 1u8));
+        assert_noop!(submit(2u16, 2u8), Error::<Test>::CommitQueueFull);
+        assert_ok!(submit(0u16, 9u8));
+        let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
+        let queue = TimelockedWeightCommits::<Test>::get(NetUidStorageIndex::from(netuid), epoch);
+        assert_eq!(queue.len(), 2);
+        assert!(
+            queue
+                .iter()
+                .any(|(who, _, bytes, _)| *who == U256::from(0) && bytes.iter().all(|b| *b == 9))
+        );
+        assert!(queue.iter().any(|(who, ..)| *who == U256::from(1)));
+        // A newly highest-stake permitted validator also gets admission.
+        SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+            &U256::from(2),
+            &U256::from(2),
+            netuid,
+            500_000_000u64.into(),
+        );
+        SubtensorModule::set_validator_permit_for_uid(netuid, 2, true);
+        assert_ok!(submit(2u16, 2u8));
+        let queue = TimelockedWeightCommits::<Test>::get(NetUidStorageIndex::from(netuid), epoch);
+        assert!(queue.iter().any(|(who, ..)| *who == U256::from(2)));
+        assert!(!queue.iter().any(|(who, ..)| *who == U256::from(1)));
+    });
+}
+
+#[test]
+fn null_timelock_equal_stake_first_uid_preempts_at_count_limit() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 300_000_000]);
+        SubtensorModule::set_commit_reveal_weights_enabled(netuid, true);
+        SubtensorModule::set_max_allowed_uids(netuid, 65);
+        SubtensorModule::set_max_allowed_validators(netuid, 65);
+        for uid in 4..65u16 {
+            let hotkey = U256::from(uid);
+            SubtensorModule::append_neuron(netuid, &hotkey, 0);
+        }
+        for uid in 2..65u16 {
+            SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+                &U256::from(uid),
+                &U256::from(uid),
+                netuid,
+                300_000_000u64.into(),
+            );
+            SubtensorModule::set_validator_permit_for_uid(netuid, uid, true);
+        }
+        let version = SubtensorModule::get_commit_reveal_weights_version();
+        for uid in 1..65u16 {
+            assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
+                RuntimeOrigin::signed(U256::from(uid)),
+                netuid,
+                MechId::MAIN,
+                vec![1u8].try_into().unwrap(),
+                1000,
+                version,
+            ));
+        }
+        assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
+            RuntimeOrigin::signed(U256::from(0)),
+            netuid,
+            MechId::MAIN,
+            vec![1u8].try_into().unwrap(),
+            1000,
+            version,
+        ));
+        let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
+        let queue = TimelockedWeightCommits::<Test>::get(NetUidStorageIndex::from(netuid), epoch);
+        assert_eq!(queue.len(), NULL_COMMIT_QUEUE_COUNT);
+        assert!(queue.iter().any(|(who, ..)| *who == U256::from(0)));
+        assert!(!queue.iter().any(|(who, ..)| *who == U256::from(64)));
+    });
+}
+
+#[test]
+fn null_consensus_switch_waits_for_timelock_queues_to_drain() {
+    use frame_support::assert_noop;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        SubtensorModule::set_commit_reveal_weights_enabled(netuid, true);
+        let version = SubtensorModule::get_commit_reveal_weights_version();
+        assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
+            RuntimeOrigin::signed(U256::from(0)),
+            netuid,
+            MechId::MAIN,
+            vec![1u8].try_into().unwrap(),
+            1000,
+            version,
+        ));
+        assert_noop!(
+            SubtensorModule::do_set_epoch_consensus(netuid, EpochConsensus::Yuma),
+            Error::<Test>::InvalidValue
+        );
+        let index = NetUidStorageIndex::from(netuid);
+        let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
+        TimelockedWeightCommits::<Test>::remove(index, epoch);
+        assert_ok!(SubtensorModule::do_set_epoch_consensus(
+            netuid,
+            EpochConsensus::Yuma
+        ));
+        assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
+            RuntimeOrigin::signed(U256::from(0)),
+            netuid,
+            MechId::MAIN,
+            vec![1u8].try_into().unwrap(),
+            1000,
+            version,
+        ));
+        assert_noop!(
+            SubtensorModule::do_set_epoch_consensus(netuid, EpochConsensus::Null),
+            Error::<Test>::InvalidValue
+        );
+        TimelockedWeightCommits::<Test>::remove(index, epoch);
+        assert_ok!(SubtensorModule::do_set_epoch_consensus(
+            netuid,
+            EpochConsensus::Null
+        ));
+    });
+}
+
+#[test]
+fn null_no_validator_fallback_excludes_recycled_root_budget() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([0, 0]);
+        // Ensure every participant is a miner, including UID zero.
+        SubtensorModule::set_validator_permit_for_uid(netuid, 0, false);
+        SubtensorModule::set_validator_permit_for_uid(netuid, 1, false);
+        SubnetOwner::<Test>::insert(netuid, U256::from(100));
+        SubnetAlphaOut::<Test>::insert(netuid, AlphaBalance::from(1_000u64));
+        let before: u64 = (0..4u16)
+            .map(|uid| {
+                SubtensorModule::get_stake_for_hotkey_on_subnet(&U256::from(uid), netuid).to_u64()
+            })
+            .sum();
+        SubtensorModule::distribute_emission(
+            netuid,
+            500u64.into(),
+            200u64.into(),
+            300u64.into(),
+            0u64.into(),
+        );
+        let after: u64 = (0..4u16)
+            .map(|uid| {
+                SubtensorModule::get_stake_for_hotkey_on_subnet(&U256::from(uid), netuid).to_u64()
+            })
+            .sum();
+        assert_eq!(after - before, 700);
+        assert_eq!(SubnetAlphaOut::<Test>::get(netuid).to_u64(), 700);
+        assert_eq!(
+            Emission::<Test>::get(netuid)
+                .iter()
+                .map(|e| e.to_u64())
+                .sum::<u64>(),
+            700
+        );
+    });
+}
+
+#[test]
+fn null_fallback_whole_units_respect_each_mechanism_budget() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([0, 0]);
+        SubtensorModule::set_validator_permit_for_uid(netuid, 0, false);
+        SubtensorModule::set_validator_permit_for_uid(netuid, 1, false);
+        assert_ok!(SubtensorModule::do_set_max_mechanism_count(4.into()));
+        assert_ok!(SubtensorModule::do_set_mechanism_count(netuid, 4.into()));
+        for local_budget in [0u64, 1, 2, 7, 700, u64::MAX - 300] {
+            let total_budget = local_budget.saturating_add(300);
+            let output = SubtensorModule::epoch_with_mechanism_budgets(
+                netuid,
+                local_budget.into(),
+                0u64.into(),
+                total_budget.saturating_sub(local_budget).into(),
+            );
+            assert_eq!(
+                output
+                    .iter()
+                    .map(|(_, miner, _)| miner.to_u64())
+                    .sum::<u64>(),
+                local_budget
+            );
+            assert!(output.iter().all(|(_, _, dividend)| dividend.is_zero()));
+            assert_eq!(
+                Emission::<Test>::get(netuid)
+                    .iter()
+                    .map(|amount| amount.to_u64())
+                    .sum::<u64>(),
+                local_budget
+            );
+        }
+    });
+}
+
+#[test]
+fn null_bond_cutoff_tracks_last_yuma_epoch_not_null_epochs() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        SubtensorModule::set_epoch_consensus(netuid, EpochConsensus::Yuma);
+        LastMechansimStepBlock::<Test>::insert(netuid, 10);
+        assert_eq!(SubtensorModule::bond_cutoff_block(netuid, 20, 5), 11);
+        assert_ok!(SubtensorModule::do_set_epoch_consensus(
+            netuid,
+            EpochConsensus::Null
+        ));
+        LastMechansimStepBlock::<Test>::insert(netuid, 100);
+        assert_eq!(SubtensorModule::bond_cutoff_block(netuid, 100, 5), 11);
+        assert_ok!(SubtensorModule::do_set_epoch_consensus(
+            netuid,
+            EpochConsensus::Yuma
+        ));
+        assert_eq!(SubtensorModule::bond_cutoff_block(netuid, 101, 5), 11);
+        LastYumaStepBlock::<Test>::insert(netuid, 101);
+        assert_eq!(SubtensorModule::bond_cutoff_block(netuid, 102, 5), 102);
+    });
+}
+
+#[test]
+fn null_replaced_miner_bonds_match_clean_baseline_after_return_to_yuma() {
+    for yuma3 in [false, true] {
+        let run = |stale_bonds| {
+            new_test_ext(1).execute_with(|| {
+                let netuid = setup([300_000_000, 300_000_000]);
+                SubtensorModule::set_epoch_consensus(netuid, EpochConsensus::Yuma);
+                SubtensorModule::set_yuma3_enabled(netuid, yuma3);
+                LastMechansimStepBlock::<Test>::insert(netuid, 10);
+                if stale_bonds {
+                    Bonds::<Test>::insert(
+                        NetUidStorageIndex::from(netuid),
+                        0,
+                        vec![(2, 32_767), (3, 32_768)],
+                    );
+                    Bonds::<Test>::insert(NetUidStorageIndex::from(netuid), 1, vec![(3, u16::MAX)]);
+                } else {
+                    Bonds::<Test>::insert(NetUidStorageIndex::from(netuid), 0, vec![(2, 32_767)]);
+                }
+                assert_ok!(SubtensorModule::do_set_epoch_consensus(
+                    netuid,
+                    EpochConsensus::Null
+                ));
+                // UID 3 was replaced while bonds were frozen, then Null epochs advanced.
+                SubtensorModule::replace_neuron(netuid, 3, &U256::from(4), 50);
+                LastMechansimStepBlock::<Test>::insert(netuid, 100);
+                System::set_block_number(110);
+                set_weights(netuid, 0, vec![2], vec![u16::MAX]);
+                set_weights(netuid, 1, vec![2], vec![u16::MAX]);
+                assert_ok!(SubtensorModule::do_set_epoch_consensus(
+                    netuid,
+                    EpochConsensus::Yuma
+                ));
+                System::set_block_number(111);
+                let output =
+                    SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000u64.into());
+                output
+                    .0
+                    .into_iter()
+                    .map(|(hotkey, terms)| {
+                        (hotkey, terms.bond, terms.dividend, terms.validator_emission)
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(run(true), run(false), "Yuma3={yuma3}");
+    }
+}
+
+#[test]
+fn null_multiple_mechanisms_cannot_multiply_miner_rounding_remainders() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        assert_ok!(SubtensorModule::do_set_max_mechanism_count(4.into()));
+        assert_ok!(SubtensorModule::do_set_mechanism_count(netuid, 4.into()));
+        for miner_budget in [0u64, 1, 2, 3, 5, 501, 1_000_001] {
+            let output = SubtensorModule::epoch_with_mechanism_budgets(
+                netuid,
+                miner_budget.into(),
+                200u64.into(),
+                300u64.into(),
+            );
+            assert_eq!(
+                output
+                    .iter()
+                    .map(|(_, miner, _)| miner.to_u64())
+                    .sum::<u64>(),
+                miner_budget
+            );
+            assert_eq!(
+                output
+                    .iter()
+                    .map(|(_, _, dividend)| dividend.to_u64())
+                    .sum::<u64>(),
+                500
+            );
+            assert_eq!(
+                Emission::<Test>::get(netuid)
+                    .iter()
+                    .map(|amount| amount.to_u64())
+                    .sum::<u64>(),
+                miner_budget + 500
+            );
+        }
+        // Independently rounded 251-unit mechanism totals would pay 504 miners;
+        // the public 1,002-unit epoch must pay exactly 501 instead.
+        let output = SubtensorModule::epoch_with_mechanisms(netuid, 1_002u64.into());
+        assert_eq!(
+            output
+                .iter()
+                .map(|(_, miner, _)| miner.to_u64())
+                .sum::<u64>(),
+            501
+        );
+        assert_eq!(
+            output
+                .iter()
+                .map(|(_, _, dividend)| dividend.to_u64())
+                .sum::<u64>(),
+            501
         );
     });
 }

@@ -125,6 +125,19 @@ impl<T: Config> Pallet<T> {
         ensure!(Self::if_subnet_exist(netuid), Error::<T>::SubnetNotExists);
         // Root uses its separate dividend/basket mechanism, not subnet epochs.
         ensure!(!netuid.is_root(), Error::<T>::InvalidValue);
+        // Do not import legacy queues outside Null's work bound or move large
+        // pending Null reveals into Yuma. Probe keys without decoding values.
+        if mode != Self::get_epoch_consensus(netuid) {
+            for mechanism in 0..MAX_MECHANISM_COUNT_PER_SUBNET {
+                let index = Self::get_mechanism_storage_index(netuid, mechanism.into());
+                ensure!(
+                    TimelockedWeightCommits::<T>::iter_key_prefix(index)
+                        .next()
+                        .is_none(),
+                    Error::<T>::InvalidValue
+                );
+            }
+        }
         let count = u16::from(u8::from(Self::get_current_mechanism_count(netuid)));
         let ceiling = Self::epoch_uid_budget(mode)
             .checked_div(count)
@@ -139,6 +152,12 @@ impl<T: Config> Pallet<T> {
         );
         if Self::get_max_allowed_uids(netuid) > ceiling {
             Self::set_max_allowed_uids(netuid, ceiling);
+        }
+        if mode == EpochConsensus::Null
+            && Self::get_epoch_consensus(netuid) == EpochConsensus::Yuma
+            && !LastYumaStepBlock::<T>::contains_key(netuid)
+        {
+            LastYumaStepBlock::<T>::insert(netuid, LastMechansimStepBlock::<T>::get(netuid));
         }
         Self::set_epoch_consensus(netuid, mode);
         Ok(())
@@ -155,6 +174,19 @@ impl<T: Config> Pallet<T> {
 
         // Count cannot be zero
         ensure!(mechanism_count > 0.into(), Error::<T>::InvalidValue);
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null
+            && mechanism_count != Self::get_current_mechanism_count(netuid)
+        {
+            for mechanism in 0..MAX_MECHANISM_COUNT_PER_SUBNET {
+                let index = Self::get_mechanism_storage_index(netuid, mechanism.into());
+                ensure!(
+                    TimelockedWeightCommits::<T>::iter_key_prefix(index)
+                        .next()
+                        .is_none(),
+                    Error::<T>::InvalidValue
+                );
+            }
+        }
 
         // Make sure we are not exceeding the max sub-subnet count
         ensure!(
@@ -323,107 +355,148 @@ impl<T: Config> Pallet<T> {
         netuid: NetUid,
         rao_emission: AlphaBalance,
     ) -> Vec<(T::AccountId, AlphaBalance, AlphaBalance)> {
-        let aggregated: BTreeMap<T::AccountId, EpochTerms> =
+        let dividends = AlphaBalance::from(u64::from(rao_emission) / 2);
+        Self::epoch_with_mechanism_budgets(
+            netuid,
+            rao_emission.saturating_sub(dividends),
+            dividends,
+            AlphaBalance::ZERO,
+        )
+    }
+
+    /// Split funded pools before rounding individual mechanisms' payouts.
+    pub(crate) fn epoch_with_mechanism_budgets(
+        netuid: NetUid,
+        miner_budget: AlphaBalance,
+        local_dividend_budget: AlphaBalance,
+        root_budget: AlphaBalance,
+    ) -> Vec<(T::AccountId, AlphaBalance, AlphaBalance)> {
+        let rao_emission = miner_budget
+            .saturating_add(local_dividend_budget)
+            .saturating_add(root_budget);
+        let miners = Self::split_emissions(netuid, miner_budget);
+        let local_dividends = Self::split_emissions(netuid, local_dividend_budget);
+        let roots = Self::split_emissions(netuid, root_budget);
+        // Each mechanism's normal and fallback pools derive from these same
+        // funded slices. Remainders cannot multiply the subnet's miner budget.
+        let null_consensus = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
+        let emissions = if null_consensus {
+            miners
+                .iter()
+                .zip(&local_dividends)
+                .zip(&roots)
+                .map(|((miner, local), root)| miner.saturating_add(*local).saturating_add(*root))
+                .collect()
+        } else {
             Self::split_emissions(netuid, rao_emission)
-                .into_iter()
-                .enumerate()
-                // Run epoch function for each mechanism to distribute its portion of emissions
-                .flat_map(|(sub_id_usize, sub_emission)| {
-                    let sub_id_u8: u8 = sub_id_usize.try_into().unwrap_or_default();
-                    let sub_id = MechId::from(sub_id_u8);
+        };
+        let aggregated: BTreeMap<T::AccountId, EpochTerms> = emissions
+            .into_iter()
+            .enumerate()
+            // Run epoch function for each mechanism to distribute its portion of emissions
+            .flat_map(|(sub_id_usize, sub_emission)| {
+                let sub_id_u8: u8 = sub_id_usize.try_into().unwrap_or_default();
+                let sub_id = MechId::from(sub_id_u8);
 
-                    // Run epoch function on the mechanism emission
-                    let epoch_output = Self::epoch_mechanism(netuid, sub_id, sub_emission);
-                    Self::persist_mechanism_epoch_terms(netuid, sub_id, epoch_output.as_map());
+                // Run epoch function on the mechanism emission
+                let mining_budget = miners.get(sub_id_usize).copied().unwrap_or_default();
+                let local = local_dividends
+                    .get(sub_id_usize)
+                    .copied()
+                    .unwrap_or_default();
+                let root = roots.get(sub_id_usize).copied().unwrap_or_default();
+                let epoch_output = Self::epoch_mechanism_with_budgets(
+                    netuid,
+                    sub_id,
+                    sub_emission,
+                    mining_budget,
+                    local.saturating_add(root),
+                    mining_budget.saturating_add(local),
+                );
+                Self::persist_mechanism_epoch_terms(netuid, sub_id, epoch_output.as_map());
 
-                    // Calculate mechanism weight from the split emission (not the other way because preserving
-                    // emission accuracy is the priority)
-                    // For zero emission the first mechanism gets full weight
-                    let sub_weight = U64F64::saturating_from_num(sub_emission).safe_div_or(
-                        U64F64::saturating_from_num(rao_emission),
-                        U64F64::saturating_from_num(if sub_id_u8 == 0 { 1 } else { 0 }),
-                    );
+                // Calculate mechanism weight from the split emission (not the other way because preserving
+                // emission accuracy is the priority)
+                // For zero emission the first mechanism gets full weight
+                let sub_weight = U64F64::saturating_from_num(sub_emission).safe_div_or(
+                    U64F64::saturating_from_num(rao_emission),
+                    U64F64::saturating_from_num(if sub_id_u8 == 0 { 1 } else { 0 }),
+                );
 
-                    // Produce an iterator of (hotkey, (terms, sub_weight)) tuples
-                    epoch_output
-                        .0
-                        .into_iter()
-                        .map(move |(hotkey, terms)| (hotkey, (terms, sub_weight)))
-                })
-                // Consolidate the hotkey emissions into a single BTreeMap
-                .fold(BTreeMap::new(), |mut acc, (hotkey, (terms, sub_weight))| {
-                    acc.entry(hotkey)
-                        .and_modify(|acc_terms| {
-                            // Server and validator emission come from mechanism emission and need to be added up
-                            acc_terms.validator_emission = acc_terms
-                                .validator_emission
-                                .saturating_add(terms.validator_emission);
-                            acc_terms.server_emission = acc_terms
-                                .server_emission
-                                .saturating_add(terms.server_emission);
+                // Produce an iterator of (hotkey, (terms, sub_weight)) tuples
+                epoch_output
+                    .0
+                    .into_iter()
+                    .map(move |(hotkey, terms)| (hotkey, (terms, sub_weight)))
+            })
+            // Consolidate the hotkey emissions into a single BTreeMap
+            .fold(BTreeMap::new(), |mut acc, (hotkey, (terms, sub_weight))| {
+                acc.entry(hotkey)
+                    .and_modify(|acc_terms| {
+                        // Server and validator emission come from mechanism emission and need to be added up
+                        acc_terms.validator_emission = acc_terms
+                            .validator_emission
+                            .saturating_add(terms.validator_emission);
+                        acc_terms.server_emission = acc_terms
+                            .server_emission
+                            .saturating_add(terms.server_emission);
 
-                            // The rest of the terms need to be aggregated as weighted sum
-                            acc_terms.dividend = Self::weighted_acc_u16(
-                                acc_terms.dividend,
-                                terms.dividend,
-                                sub_weight,
-                            );
-                            acc_terms.stake_weight = Self::weighted_acc_u16(
-                                acc_terms.stake_weight,
-                                terms.stake_weight,
-                                sub_weight,
-                            );
-                            acc_terms.active |= terms.active;
-                            acc_terms.emission = Self::weighted_acc_alpha(
-                                acc_terms.emission,
-                                terms.emission,
-                                sub_weight,
-                            );
-                            acc_terms.consensus = Self::weighted_acc_u16(
-                                acc_terms.consensus,
-                                terms.consensus,
-                                sub_weight,
-                            );
-                            acc_terms.validator_trust = Self::weighted_acc_u16(
-                                acc_terms.validator_trust,
+                        // The rest of the terms need to be aggregated as weighted sum
+                        acc_terms.dividend =
+                            Self::weighted_acc_u16(acc_terms.dividend, terms.dividend, sub_weight);
+                        acc_terms.stake_weight = Self::weighted_acc_u16(
+                            acc_terms.stake_weight,
+                            terms.stake_weight,
+                            sub_weight,
+                        );
+                        acc_terms.active |= terms.active;
+                        acc_terms.emission = if null_consensus {
+                            // These are already whole-unit payouts from funded slices.
+                            acc_terms.emission.saturating_add(terms.emission)
+                        } else {
+                            Self::weighted_acc_alpha(acc_terms.emission, terms.emission, sub_weight)
+                        };
+                        acc_terms.consensus = Self::weighted_acc_u16(
+                            acc_terms.consensus,
+                            terms.consensus,
+                            sub_weight,
+                        );
+                        acc_terms.validator_trust = Self::weighted_acc_u16(
+                            acc_terms.validator_trust,
+                            terms.validator_trust,
+                            sub_weight,
+                        );
+                        acc_terms.new_validator_permit |= terms.new_validator_permit;
+                        acc_terms.stake = acc_terms.stake.saturating_add(terms.stake);
+                    })
+                    .or_insert_with(|| {
+                        // weighted insert for the first sub-subnet seen for this hotkey
+                        EpochTerms {
+                            uid: terms.uid,
+                            dividend: Self::weighted_acc_u16(0, terms.dividend, sub_weight),
+                            incentive: Self::weighted_acc_u16(0, terms.incentive, sub_weight),
+                            validator_emission: terms.validator_emission,
+                            server_emission: terms.server_emission,
+                            stake_weight: Self::weighted_acc_u16(0, terms.stake_weight, sub_weight),
+                            active: terms.active, // booleans are ORed across subs
+                            emission: if null_consensus {
+                                terms.emission
+                            } else {
+                                Self::weighted_acc_alpha(0u64.into(), terms.emission, sub_weight)
+                            },
+                            consensus: Self::weighted_acc_u16(0, terms.consensus, sub_weight),
+                            validator_trust: Self::weighted_acc_u16(
+                                0,
                                 terms.validator_trust,
                                 sub_weight,
-                            );
-                            acc_terms.new_validator_permit |= terms.new_validator_permit;
-                            acc_terms.stake = acc_terms.stake.saturating_add(terms.stake);
-                        })
-                        .or_insert_with(|| {
-                            // weighted insert for the first sub-subnet seen for this hotkey
-                            EpochTerms {
-                                uid: terms.uid,
-                                dividend: Self::weighted_acc_u16(0, terms.dividend, sub_weight),
-                                incentive: Self::weighted_acc_u16(0, terms.incentive, sub_weight),
-                                validator_emission: terms.validator_emission,
-                                server_emission: terms.server_emission,
-                                stake_weight: Self::weighted_acc_u16(
-                                    0,
-                                    terms.stake_weight,
-                                    sub_weight,
-                                ),
-                                active: terms.active, // booleans are ORed across subs
-                                emission: Self::weighted_acc_alpha(
-                                    0u64.into(),
-                                    terms.emission,
-                                    sub_weight,
-                                ),
-                                consensus: Self::weighted_acc_u16(0, terms.consensus, sub_weight),
-                                validator_trust: Self::weighted_acc_u16(
-                                    0,
-                                    terms.validator_trust,
-                                    sub_weight,
-                                ),
-                                new_validator_permit: terms.new_validator_permit,
-                                bond: Vec::new(), // aggregated map doesn't use bonds; keep empty
-                                stake: terms.stake,
-                            }
-                        });
-                    acc
-                });
+                            ),
+                            new_validator_permit: terms.new_validator_permit,
+                            bond: Vec::new(), // aggregated map doesn't use bonds; keep empty
+                            stake: terms.stake,
+                        }
+                    });
+                acc
+            });
 
         // State updates from epoch function
         Self::persist_netuid_epoch_terms(netuid, &aggregated);
