@@ -84,7 +84,11 @@ def _prompt_set_args(
 
         def _parse_value(_app_ctx: AppContext, raw: str) -> str:
             if kwargs["name"] is not None:
-                to_raw(kwargs["name"], raw)  # validate the form; the intent converts again
+                if kwargs["name"] == "epoch_consensus":
+                    if raw not in ("Yuma", "Null"):
+                        raise ValueError("epoch_consensus must be Yuma or Null")
+                else:
+                    to_raw(kwargs["name"], raw)  # validate the form; the intent converts again
             return raw
 
         specs.append(

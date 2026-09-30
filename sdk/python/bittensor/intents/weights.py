@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from itertools import accumulate
+from math import isfinite
 from typing import Any, Mapping, Optional, Sequence
 
 # Module import + attribute access (not `from bittensor_core import ...`):
@@ -60,10 +61,10 @@ def normalize(uids: Sequence[int], weights: Sequence[float]) -> tuple[list[int],
         raise BittensorError(
             f"uids and weights must be equal length: {len(uids)} vs {len(weights)}."
         )
-    if any(w < 0 for w in weights):
-        raise BittensorError("Weights must be non-negative.")
-    if any(u < 0 for u in uids):
-        raise BittensorError("UIDs must be non-negative.")
+    if any(not isfinite(w) or w < 0 for w in weights):
+        raise BittensorError("Weights must be finite and non-negative.")
+    if any(u < 0 or u > U16_MAX for u in uids):
+        raise BittensorError("UIDs must be in 0..65535.")
 
     top = max(weights) if weights else 0
     if top == 0:
@@ -206,7 +207,7 @@ async def _preflight(substrate, hotkey_ss58: str, netuid: int, mechid: int) -> _
 
 
 def _conform(
-    uids: list[int], weights: list[float], preflight: _Preflight, netuid: int
+    uids: list[int], weights: list[float], preflight: _Preflight, netuid: int, raw_u16: bool = False
 ) -> tuple[list[int], list[int]]:
     """Fit the weights to the subnet's hyperparameters and quantize them.
 
@@ -215,11 +216,28 @@ def _conform(
     self-weight is exempt from both constraints, matching the chain's rules.
     """
     is_self_weight = uids == [preflight.uid]
-    floats = list(weights)
-    if not is_self_weight and preflight.max_weight_limit < U16_MAX:
-        floats = clip_to_max_weight(floats, preflight.max_weight_limit / U16_MAX)
+    if raw_u16:
+        if len(uids) != len(weights) or any(u < 0 or u > U16_MAX for u in uids):
+            raise BittensorError("Raw weights require equal-length lists and u16 UIDs.")
+        if any(not isfinite(w) or w < 0 or w > U16_MAX or int(w) != w for w in weights):
+            raise BittensorError("Raw weights must be integers in 0..65535.")
+        pairs = [(uid, int(w)) for uid, w in zip(uids, weights) if w > 0]
+        norm_uids = [uid for uid, _ in pairs]
+        norm_vals = [value for _, value in pairs]
+        if not norm_vals:
+            raise BittensorError("All weights are zero; nothing to set.")
+        if not is_self_weight and max(norm_vals) * U16_MAX > preflight.max_weight_limit * sum(
+            norm_vals
+        ):
+            raise BittensorError(
+                "Raw weights exceed max_weight_limit; change the integer ratios or subnet limit."
+            )
+    else:
+        floats = list(weights)
+        if not is_self_weight and preflight.max_weight_limit < U16_MAX:
+            floats = clip_to_max_weight(floats, preflight.max_weight_limit / U16_MAX)
 
-    norm_uids, norm_vals = normalize(uids, floats)
+        norm_uids, norm_vals = normalize(uids, floats)
     if not norm_uids:
         raise BittensorError("All weights are zero; nothing to set.")
     if not is_self_weight and len(norm_uids) < preflight.min_allowed_weights:
@@ -229,6 +247,13 @@ def _conform(
             code=ErrorCode.INVALID_ARGUMENT,
         )
     return norm_uids, norm_vals
+
+
+async def _ensure_raw_null(substrate, netuid: int) -> None:
+    """Raw integer submission is explicit and only available in Null mode."""
+    mode = await substrate.query("SubtensorModule", "SubnetEpochConsensus", [netuid])
+    if mode != "Null" and mode != {"Null": None}:
+        raise BittensorError("raw_u16 requires a subnet running Null consensus.")
 
 
 async def _build_timelocked(
@@ -345,6 +370,12 @@ class SetWeights(Intent):
     weights: Optional[list[float]] = field(default=None, metadata={"help": WEIGHTS_HELP})
     mechid: int = field(default=0, metadata={"help": MECHID_HELP})
     version_key: int = field(default=0, metadata={"help": VERSION_KEY_HELP})
+    raw_u16: bool = field(
+        default=False,
+        metadata={
+            "help": "Preserve exact u16 integer ratios on Null subnets; no scaling or clipping."
+        },
+    )
 
     def __post_init__(self):
         self.uids, self.weights = _as_pairs(self.uids, self.weights)
@@ -353,7 +384,11 @@ class SetWeights(Intent):
         preflight = await _preflight(
             substrate, self.hotkey_address(wallet), self.netuid, self.mechid
         )
-        norm_uids, norm_vals = _conform(self.uids, self.weights, preflight, self.netuid)
+        if self.raw_u16:
+            await _ensure_raw_null(substrate, self.netuid)
+        norm_uids, norm_vals = _conform(
+            self.uids, self.weights, preflight, self.netuid, self.raw_u16
+        )
         if preflight.commit_reveal:
             return await _build_timelocked(
                 substrate,
@@ -385,6 +420,8 @@ class SetWeights(Intent):
         return [self.summary(), f"submission path: {mode}"]
 
     async def warnings(self, substrate, signer_address: str) -> list[str]:
+        if self.raw_u16:
+            return []
         warning = await _would_clip(substrate, self.netuid, self.weights)
         return [warning] if warning else []
 
@@ -416,6 +453,12 @@ class CommitWeights(Intent):
     weights: Optional[list[float]] = field(default=None, metadata={"help": WEIGHTS_HELP})
     mechid: int = field(default=0, metadata={"help": MECHID_HELP})
     version_key: int = field(default=0, metadata={"help": VERSION_KEY_HELP})
+    raw_u16: bool = field(
+        default=False,
+        metadata={
+            "help": "Preserve exact u16 integer ratios on Null subnets; no scaling or clipping."
+        },
+    )
     commit_reveal_version: int = field(
         default=DEFAULT_COMMIT_REVEAL_VERSION,
         metadata={
@@ -431,7 +474,11 @@ class CommitWeights(Intent):
         preflight = await _preflight(
             substrate, self.hotkey_address(wallet), self.netuid, self.mechid
         )
-        norm_uids, norm_vals = _conform(self.uids, self.weights, preflight, self.netuid)
+        if self.raw_u16:
+            await _ensure_raw_null(substrate, self.netuid)
+        norm_uids, norm_vals = _conform(
+            self.uids, self.weights, preflight, self.netuid, self.raw_u16
+        )
         return await _build_timelocked(
             substrate,
             self.hotkey_public_key(wallet),
@@ -444,6 +491,8 @@ class CommitWeights(Intent):
         )
 
     async def warnings(self, substrate, signer_address: str) -> list[str]:
+        if self.raw_u16:
+            return []
         warning = await _would_clip(substrate, self.netuid, self.weights)
         return [warning] if warning else []
 

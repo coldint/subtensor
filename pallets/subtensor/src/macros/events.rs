@@ -879,5 +879,7 @@ mod events {
             /// Estimated TAO value of the claimant's slices of those rows, left in the fund.
             forfeited_tao_est: TaoBalance,
         },
+        /// The subnet owner or root selected a new epoch reward algorithm.
+        EpochConsensusSet(NetUid, EpochConsensus),
     }
 }

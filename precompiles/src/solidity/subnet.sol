@@ -375,4 +375,12 @@ interface ISubnet {
             uint64 networkRegistrationStartBlock,
             uint64 taoInRefundDeploymentBlock
         );
+    /// Owner-signed consensus selection: 0 = Yuma, 1 = Null. Invalid modes revert.
+    function setEpochConsensus(uint16 netuid, uint8 mode) external;
+    /// Returns 0 (Yuma/default) or 1 (Null); absent subnets return the default.
+    function getEpochConsensus(uint16 netuid) external view returns (uint8);
+    /// Current runtime limits shared across mechanisms, in UIDs, bytes, bytes, count.
+    function getNullConsensusLimits() external view returns (
+        uint16 uidBudget, uint32 payloadBytes, uint32 queueBytes, uint32 queueCount
+    );
 }

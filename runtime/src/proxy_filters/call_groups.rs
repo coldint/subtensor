@@ -547,6 +547,7 @@ call_filter_group!(
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_bonds_reset_enabled),
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_owner_immune_neuron_limit),
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_mechanism_count),
+        RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_epoch_consensus),
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_mechanism_emission_split),
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_trim_to_max_allowed_uids),
         RuntimeCall::AdminUtils(AdminUtilsCall::sudo_set_max_allowed_uids),

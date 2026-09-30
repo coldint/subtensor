@@ -251,6 +251,7 @@ class SubtensorModule:
     Yuma3On = Item('SubtensorModule', 'Yuma3On', 'bool')
     AlphaValues = Item('SubtensorModule', 'AlphaValues', '(u16, u16)')
     LiquidAlphaConsensusMode = Item('SubtensorModule', 'LiquidAlphaConsensusMode', 'ConsensusMode')
+    SubnetEpochConsensus = Item('SubtensorModule', 'SubnetEpochConsensus', 'EpochConsensus')
     SubtokenEnabled = Item('SubtensorModule', 'SubtokenEnabled', 'bool')
     DissolveCleanupQueue = Item('SubtensorModule', 'DissolveCleanupQueue', 'Vec<NetUid>')
     CurrentDissolveCleanupStatus = Item('SubtensorModule', 'CurrentDissolveCleanupStatus', 'DissolveCleanupStatus')

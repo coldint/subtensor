@@ -7,7 +7,7 @@ use frame_system::RawOrigin;
 use pallet_evm::{AddressMapping, PrecompileHandle};
 use precompile_utils::{
     EvmResult,
-    prelude::{BoundedString, BoundedVec, UnboundedBytes},
+    prelude::{BoundedString, BoundedVec, UnboundedBytes, revert},
 };
 use sp_core::H256;
 use sp_runtime::traits::{AsSystemOriginSigner, Dispatchable, UniqueSaturatedInto};
@@ -999,6 +999,54 @@ where
                 bonds_penalty,
             },
         )
+    }
+
+    /// Consensus wire values are stable: 0 = Yuma, 1 = Null.
+    #[precompile::public("setEpochConsensus(uint16,uint8)")]
+    fn set_epoch_consensus(
+        handle: &mut impl PrecompileHandle,
+        netuid: u16,
+        mode: u8,
+    ) -> EvmResult<()> {
+        let mode = match mode {
+            0 => pallet_subtensor::EpochConsensus::Yuma,
+            1 => pallet_subtensor::EpochConsensus::Null,
+            _ => return Err(revert("epoch consensus must be 0 (Yuma) or 1 (Null)")),
+        };
+        dispatch_admin(
+            handle,
+            pallet_admin_utils::Call::<R>::sudo_set_epoch_consensus {
+                netuid: netuid.into(),
+                mode,
+            },
+        )
+    }
+
+    #[precompile::public("getEpochConsensus(uint16)")]
+    #[precompile::view]
+    fn get_epoch_consensus(handle: &mut impl PrecompileHandle, netuid: u16) -> EvmResult<u8> {
+        handle.record_db_reads::<R>(1)?;
+        Ok(
+            match pallet_subtensor::SubnetEpochConsensus::<R>::get(NetUid::from(netuid)) {
+                pallet_subtensor::EpochConsensus::Yuma => 0,
+                pallet_subtensor::EpochConsensus::Null => 1,
+            },
+        )
+    }
+
+    /// Current-runtime limits: shared UID budget, payload bytes, queued bytes,
+    /// and queued commit count per Null subnet epoch (across mechanisms).
+    #[precompile::public("getNullConsensusLimits()")]
+    #[precompile::view]
+    fn get_null_consensus_limits(
+        _handle: &mut impl PrecompileHandle,
+    ) -> EvmResult<(u16, u32, u32, u32)> {
+        Ok((
+            pallet_subtensor::subnets::mechanism::NULL_UID_BUDGET,
+            pallet_subtensor::MAX_CRV3_COMMIT_SIZE_BYTES,
+            pallet_subtensor::NULL_COMMIT_QUEUE_BYTES as u32,
+            pallet_subtensor::NULL_COMMIT_QUEUE_COUNT as u32,
+        ))
     }
 
     #[precompile::public("setMaxAllowedUids(uint16,uint16)")]
@@ -2192,6 +2240,85 @@ mod tests {
             );
             assert!(matches!(rejected, Some(Err(_))));
             assert_eq!(pallet_subtensor::BondsPenalty::<Runtime>::get(netuid), 123);
+        });
+    }
+
+    #[test]
+    fn subnet_null_consensus_owner_authorization_and_limits() {
+        new_test_ext().execute_with(|| {
+            let caller = addr_from_index(0x5010);
+            let netuid = setup_owner_subnet(caller);
+            let target = addr_from_index(SubnetPrecompile::<Runtime>::INDEX);
+            let precompiles = precompiles::<SubnetPrecompile<Runtime>>();
+            let input = encode_with_selector(
+                selector_u32("setEpochConsensus(uint16,uint8)"),
+                (TEST_NETUID_U16, 1u8),
+            );
+            let rejected = execute_precompile(
+                &precompiles,
+                target,
+                addr_from_index(0x5011),
+                input.clone(),
+                U256::zero(),
+            )
+            .unwrap();
+            assert!(rejected.is_err());
+            assert_eq!(
+                pallet_subtensor::Pallet::<Runtime>::get_epoch_consensus(netuid),
+                pallet_subtensor::EpochConsensus::Yuma
+            );
+            precompiles
+                .prepare_test(caller, target, input)
+                .execute_returns(());
+            precompiles
+                .prepare_test(
+                    caller,
+                    target,
+                    encode_with_selector(
+                        selector_u32("getEpochConsensus(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns(1u8);
+            precompiles
+                .prepare_test(
+                    caller,
+                    target,
+                    encode_with_selector(selector_u32("getNullConsensusLimits()"), ()),
+                )
+                .with_static_call(true)
+                .execute_returns((16_000u16, 131_072u32, 262_144u32, 64u32));
+            precompiles
+                .prepare_test(
+                    caller,
+                    target,
+                    encode_with_selector(
+                        selector_u32("setMaxAllowedUids(uint16,uint16)"),
+                        (TEST_NETUID_U16, 16_000u16),
+                    ),
+                )
+                .execute_returns(());
+            assert_eq!(
+                pallet_subtensor::Pallet::<Runtime>::get_max_allowed_uids(netuid),
+                16_000
+            );
+            let invalid = execute_precompile(
+                &precompiles,
+                target,
+                caller,
+                encode_with_selector(
+                    selector_u32("setEpochConsensus(uint16,uint8)"),
+                    (TEST_NETUID_U16, 2u8),
+                ),
+                U256::zero(),
+            )
+            .unwrap();
+            assert!(invalid.is_err());
+            assert_eq!(
+                pallet_subtensor::Pallet::<Runtime>::get_epoch_consensus(netuid),
+                pallet_subtensor::EpochConsensus::Null
+            );
         });
     }
 }

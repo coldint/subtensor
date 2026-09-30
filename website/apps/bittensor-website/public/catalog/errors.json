@@ -1281,6 +1281,42 @@
         }
       ]
     },
+    "CommitPayloadTooLarge": {
+      "code": "limit_exceeded",
+      "description": "The encrypted weight commit exceeds the subnet's consensus payload limit. Yuma accepts at most 5,000 bytes; Null accepts at most 128 KiB. Reduce the submitted weight row or check the subnet's epoch_consensus setting.",
+      "docs_url": "/docs/errors/chain/CommitPayloadTooLarge",
+      "markdown_url": "/llms.mdx/docs/errors/chain/CommitPayloadTooLarge/content.md",
+      "pallets": [
+        "SubtensorModule"
+      ],
+      "sources": [
+        {
+          "pallet": "SubtensorModule",
+          "path": "pallets/subtensor/src/macros/errors.rs",
+          "line": 414,
+          "url": "/code/pallets/subtensor/src/macros/errors.rs#L414",
+          "raw_url": "/code/raw/pallets/subtensor/src/macros/errors.rs"
+        }
+      ]
+    },
+    "CommitQueueFull": {
+      "code": "limit_exceeded",
+      "description": "The subnet's Null timelock queue has reached its shared per-epoch limit of 256 KiB or 64 commits across emission mechanisms. Wait for the next epoch before submitting another commit.",
+      "docs_url": "/docs/errors/chain/CommitQueueFull",
+      "markdown_url": "/llms.mdx/docs/errors/chain/CommitQueueFull/content.md",
+      "pallets": [
+        "SubtensorModule"
+      ],
+      "sources": [
+        {
+          "pallet": "SubtensorModule",
+          "path": "pallets/subtensor/src/macros/errors.rs",
+          "line": 416,
+          "url": "/code/pallets/subtensor/src/macros/errors.rs#L416",
+          "raw_url": "/code/raw/pallets/subtensor/src/macros/errors.rs"
+        }
+      ]
+    },
     "CommitRevealDisabled": {
       "code": "disabled",
       "description": "A weight commit or reveal was submitted on a subnet where commit-reveal is turned off. Check the `commit_reveal_weights_enabled` hyperparameter for the netuid (`btcli hparams get --netuid <n>`); use plain `set_weights` instead when it is disabled.",

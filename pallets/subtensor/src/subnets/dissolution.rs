@@ -378,6 +378,7 @@ impl<T: Config> Pallet<T> {
         Yuma3On::<T>::remove(netuid);
         AlphaValues::<T>::remove(netuid);
         LiquidAlphaConsensusMode::<T>::remove(netuid);
+        SubnetEpochConsensus::<T>::remove(netuid);
         SubtokenEnabled::<T>::remove(netuid);
         SubnetFastMovingPrice::<T>::remove(netuid);
         OwnerCutAutoLockEnabled::<T>::remove(netuid);

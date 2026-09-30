@@ -30,7 +30,7 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use pallet_evm_chain_id::{self, ChainId};
     use pallet_subtensor::{
-        ConsensusMode, DefaultMaxAllowedUids, MAX_BONDS_MOVING_AVERAGE,
+        ConsensusMode, EpochConsensus, MAX_BONDS_MOVING_AVERAGE,
         utils::rate_limiting::{Hyperparameter, TransactionType},
     };
     use sp_runtime::{BoundedVec, PerU16};
@@ -623,12 +623,16 @@ pub mod pallet {
                 Error::<T>::MaxAllowedUIdsLessThanCurrentUIds
             );
             ensure!(
-                max_allowed_uids <= DefaultMaxAllowedUids::<T>::get(),
+                max_allowed_uids
+                    <= pallet_subtensor::Pallet::<T>::epoch_uid_budget(
+                        pallet_subtensor::Pallet::<T>::get_epoch_consensus(netuid)
+                    ),
                 Error::<T>::MaxAllowedUidsGreaterThanDefaultMaxAllowedUids
             );
             // Prevent chain bloat: Require max UIDs to be limited
             let mechanism_count = pallet_subtensor::MechanismCountCurrent::<T>::get(netuid);
             pallet_subtensor::Pallet::<T>::ensure_max_uids_over_all_mechanisms(
+                netuid,
                 max_allowed_uids,
                 mechanism_count.into(),
             )?;
@@ -1402,6 +1406,36 @@ pub mod pallet {
                 maybe_owner,
                 netuid,
                 &[Hyperparameter::LiquidAlphaConsensusMode.into()],
+            );
+            Ok(())
+        }
+
+        /// Selects Yuma or Null reward calculation while preserving epoch scheduling.
+        #[pallet::call_index(111)]
+        #[pallet::weight(
+            <T as pallet::Config>::WeightInfo::sudo_set_epoch_consensus()
+                .saturating_add(<T as frame_system::Config>::DbWeight::get().reads_writes(6, 2))
+        )]
+        pub fn sudo_set_epoch_consensus(
+            origin: OriginFor<T>,
+            netuid: NetUid,
+            mode: EpochConsensus,
+        ) -> DispatchResult {
+            let maybe_owner = pallet_subtensor::Pallet::<T>::ensure_sn_owner_or_root_with_limits(
+                origin,
+                netuid,
+                &[Hyperparameter::EpochConsensus.into()],
+            )?;
+            ensure!(
+                pallet_subtensor::Pallet::<T>::if_subnet_exist(netuid),
+                pallet_subtensor::Error::<T>::SubnetNotExists
+            );
+            pallet_subtensor::Pallet::<T>::ensure_admin_window_open(netuid)?;
+            pallet_subtensor::Pallet::<T>::do_set_epoch_consensus(netuid, mode)?;
+            pallet_subtensor::Pallet::<T>::record_owner_rl(
+                maybe_owner,
+                netuid,
+                &[Hyperparameter::EpochConsensus.into()],
             );
             Ok(())
         }

@@ -836,6 +836,15 @@ impl<T: Config> Pallet<T> {
         LiquidAlphaConsensusMode::<T>::get(netuid)
     }
 
+    pub fn get_epoch_consensus(netuid: NetUid) -> EpochConsensus {
+        SubnetEpochConsensus::<T>::get(netuid)
+    }
+
+    pub fn set_epoch_consensus(netuid: NetUid, mode: EpochConsensus) {
+        SubnetEpochConsensus::<T>::insert(netuid, mode);
+        Self::deposit_event(Event::EpochConsensusSet(netuid, mode));
+    }
+
     pub fn set_liquid_alpha_consensus_mode(netuid: NetUid, mode: ConsensusMode) {
         LiquidAlphaConsensusMode::<T>::insert(netuid, mode);
         Self::deposit_event(Event::LiquidAlphaConsensusModeSet(netuid, mode));

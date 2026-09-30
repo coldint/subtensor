@@ -108,6 +108,13 @@ class Hyperparam:
 
 
 HYPERPARAMS: dict[str, Hyperparam] = {
+    "epoch_consensus": Hyperparam(
+        "int",
+        "Epoch consensus selector: 0 is Yuma, 1 is Null. Owner setter accepts Yuma or Null.",
+        short="epoch consensus mechanism",
+        minimum=0,
+        maximum=1,
+    ),
     "rho": Hyperparam(
         "int",
         "Temperature of the sigmoid that maps a validator's consensus alignment to "
@@ -305,7 +312,8 @@ HYPERPARAMS: dict[str, Hyperparam] = {
     "max_allowed_uids": Hyperparam(
         "int",
         "Maximum neuron slots (UIDs) on the subnet; registrations beyond this "
-        "prune the lowest-scoring neuron.",
+        "prune the lowest-scoring neuron. Capacity shares a budget of 256 under Yuma "
+        "or 16000 under Null across emission mechanisms.",
         short="neuron slot capacity before pruning",
     ),
     "burn_increase_mult": Hyperparam(

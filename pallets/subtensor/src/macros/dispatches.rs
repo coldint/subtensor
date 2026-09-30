@@ -395,7 +395,7 @@ mod dispatches {
         /// * `TooManyUnrevealedCommits`: Attempting to commit when the user has more than the allowed limit of unrevealed commits.
         ///
         #[pallet::call_index(117)]
-        #[pallet::weight((<T as Config>::WeightInfo::commit_crv3_mechanism_weights(), DispatchClass::Normal, Pays::No))]
+        #[pallet::weight((Pallet::<T>::timelock_weight_for_mode(*netuid, <T as Config>::WeightInfo::commit_crv3_mechanism_weights(), <T as Config>::WeightInfo::commit_crv3_mechanism_weights_null()), DispatchClass::Normal, Pays::No))]
         pub fn commit_crv3_mechanism_weights(
             origin: OriginFor<T>,
             netuid: NetUid,
@@ -1929,7 +1929,7 @@ mod dispatches {
         ///
         /// * `commit_reveal_version`: The client (bittensor-drand) version.
         #[pallet::call_index(113)]
-        #[pallet::weight((<T as crate::pallet::Config>::WeightInfo::commit_timelocked_weights(), DispatchClass::Normal, Pays::No))]
+        #[pallet::weight((Pallet::<T>::timelock_weight_for_mode(*netuid, <T as crate::pallet::Config>::WeightInfo::commit_timelocked_weights(), <T as crate::pallet::Config>::WeightInfo::commit_timelocked_weights_null()), DispatchClass::Normal, Pays::No))]
         pub fn commit_timelocked_weights(
             origin: OriginFor<T>,
             netuid: NetUid,
@@ -2022,7 +2022,7 @@ mod dispatches {
         ///
         /// * `commit_reveal_version`: The client (bittensor-drand) version.
         #[pallet::call_index(118)]
-        #[pallet::weight((<T as Config>::WeightInfo::commit_timelocked_mechanism_weights(), DispatchClass::Normal, Pays::No))]
+        #[pallet::weight((Pallet::<T>::timelock_weight_for_mode(*netuid, <T as Config>::WeightInfo::commit_timelocked_mechanism_weights(), <T as Config>::WeightInfo::commit_timelocked_mechanism_weights_null()), DispatchClass::Normal, Pays::No))]
         pub fn commit_timelocked_mechanism_weights(
             origin: OriginFor<T>,
             netuid: NetUid,

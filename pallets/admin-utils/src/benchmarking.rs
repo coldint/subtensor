@@ -531,6 +531,35 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn sudo_set_epoch_consensus() {
+        let netuid = NetUid::from(1);
+        pallet_subtensor::Pallet::<T>::set_admin_freeze_window(0);
+        pallet_subtensor::Pallet::<T>::init_new_network(netuid, 1u16);
+
+        pallet_subtensor::Pallet::<T>::set_epoch_consensus(
+            netuid,
+            pallet_subtensor::EpochConsensus::Null,
+        );
+        pallet_subtensor::Pallet::<T>::set_max_allowed_uids(netuid, 16_000);
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Root,
+            netuid,
+            pallet_subtensor::EpochConsensus::Yuma,
+        );
+
+        assert_eq!(
+            pallet_subtensor::Pallet::<T>::get_epoch_consensus(netuid),
+            pallet_subtensor::EpochConsensus::Yuma,
+        );
+        assert_eq!(
+            pallet_subtensor::Pallet::<T>::get_max_allowed_uids(netuid),
+            pallet_subtensor::DefaultMaxAllowedUids::<T>::get()
+        );
+    }
+
+    #[benchmark]
     fn sudo_set_coldkey_swap_announcement_delay() {
         #[extrinsic_call]
         _(RawOrigin::Root, 100u32.into());
@@ -693,8 +722,42 @@ mod benchmarks {
             1u16,        /*sudo_tempo*/
         );
 
+        // Include actual deletion and UID compaction at the enlarged Null limit;
+        // an empty subnet only measures changing MaxAllowedUids.
+        let netuid = NetUid::from(1);
+        let n = pallet_subtensor::subnets::mechanism::NULL_UID_BUDGET;
+        pallet_subtensor::Pallet::<T>::set_epoch_consensus(
+            netuid,
+            pallet_subtensor::EpochConsensus::Null,
+        );
+        pallet_subtensor::Pallet::<T>::set_max_allowed_uids(netuid, n);
+        pallet_subtensor::Pallet::<T>::set_immunity_period(netuid, 0);
+        for uid in 0..n {
+            let hotkey: T::AccountId = account("trim_hotkey", u32::from(uid), 0);
+            let coldkey: T::AccountId = account("trim_coldkey", u32::from(uid), 0);
+            pallet_subtensor::Owner::<T>::insert(&hotkey, &coldkey);
+            pallet_subtensor::Pallet::<T>::append_neuron(netuid, &hotkey, 0);
+            // Keep dense rows on the retained high-emission neurons so target
+            // filtering and remapping are exercised as well as UID deletion.
+            if uid >= n.saturating_sub(256) {
+                pallet_subtensor::Weights::<T>::insert(
+                    subtensor_runtime_common::NetUidStorageIndex::from(netuid),
+                    uid,
+                    (0..n).map(|target| (target, u16::MAX)).collect::<Vec<_>>(),
+                );
+            }
+        }
+        pallet_subtensor::Emission::<T>::insert(
+            netuid,
+            (0..n)
+                .map(|uid| subtensor_runtime_common::AlphaBalance::from(u64::from(uid)))
+                .collect::<Vec<_>>(),
+        );
+
         #[extrinsic_call]
 		_(RawOrigin::Root, 1u16.into()/*netuid*/, 256u16/*max_n*/)/*sudo_trim_to_max_allowed_uids()*/;
+
+        assert_eq!(SubnetworkN::<T>::get(netuid), 256);
     }
 
     #[benchmark]

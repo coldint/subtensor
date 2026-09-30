@@ -1,0 +1,103 @@
+---
+title: Null consensus
+description: Configure Null epochs, submit precise integer weights to large subnets, and safely switch back to Yuma.
+---
+
+Null is an owner-selected alternative to Yuma inside the existing epoch interface.
+Existing and newly created subnets default to Yuma. Selecting Null does not change
+stake calculation, reward destinations, collateral settlement or owner cuts.
+The root subnet keeps its separate basket/dividend mechanism and cannot select Null.
+
+## Rewards
+
+The permitted validator with the highest eligible stake determines miner incentives.
+Equal stakes select the first validator in UID order. Other validators' rows have no
+influence on miner incentives. Normal permits and stake thresholds apply; inactivity
+does not remove eligible stake from Null dividends or winner selection.
+
+The winner's weights undergo the existing self-weight, registration and commit-reveal
+masks. Its remaining integer ratios determine miner rewards. An empty or all-zero
+valid row distributes miner rewards equally across **every registered UID**. Null
+skips consensus and bond calculations and does not write bond storage.
+
+With eligible validator stake, half the epoch budget goes to validator dividends,
+proportional to that stake. The miner budget receives the other half, including the
+extra atomic unit when the epoch budget is odd. With no eligible validator stake,
+the entire budget goes to miners. Wide integer arithmetic allocates each budget in
+UID order using cumulative proportional shares. Each payout is the floor or ceiling
+of its exact share; their sum equals the budget. A zero-weight UID receives zero.
+No fractional entitlement carries forward. Reported u16 incentive and dividend
+fractions remain quantized and do not feed back into actual reward amounts.
+
+## Owner configuration
+
+```bash
+btcli hparams set --netuid 1 --name epoch_consensus --value Null
+btcli hparams set --netuid 1 --name max_allowed_uids --value 16000
+```
+
+Capacity is `floor(16000 / mechanism_count)` for Null, and
+`floor(256 / mechanism_count)` for Yuma. Increasing the mechanism count also checks
+the configured capacity. Reduce capacity first if the shared limit would be exceeded.
+Switching to Null does not automatically increase capacity.
+
+Returning to Yuma requires the actual registered population to fit the Yuma ceiling.
+Use the existing owner trimming call to prune explicitly before switching. Switching
+never silently deletes participants; once allowed, it also lowers configured capacity
+to the Yuma ceiling. The minimum allowed UIDs must fit the selected ceiling too.
+Owner authentication, admin windows and hyperparameter rate limits apply.
+
+## Exact integer weights
+
+Null stores submitted u16 values without max-upscaling. Values are relative integers
+in 0..65535 and need not sum to 65535. Choose ratios such as 65534:1 to retain small
+shares. A full row can target thousands of participants; payouts below one atomic
+unit still depend on the epoch budget and deterministic remainder allocation.
+
+```python
+from bittensor.intents import SetWeights
+
+intent = SetWeights(netuid=1, weights={2: 65534, 3: 1}, raw_u16=True)
+# Execute with the normal client and validator hotkey wallet.
+```
+
+For large rows, write a JSON object mapping UID to integer weight:
+
+```bash
+btcli misc weights set --netuid 1 --raw-u16 --weights-file weights.json
+btcli misc weights commit --netuid 1 --raw-u16 --weights-file weights.json
+```
+
+The raw path rejects fractional, negative, nonfinite and out-of-range values. It
+checks the subnet's maximum weight fraction without clipping the submitted ratios.
+Minimum count, unique valid destinations, stake, permits, rate and version checks
+still apply. Raw mode requires Null. The existing relative-float path remains
+available and keeps its scaling and clipping behavior.
+
+`set` automatically selects plaintext or timelocked submission according to subnet
+configuration. Timelocked rows auto-reveal using drand; they need no manual reveal.
+Null allows ciphertexts up to 128 KiB. The shared queue per subnet epoch is bounded
+to 256 KiB and 64 commits across all mechanisms, with the existing ten-commit
+per-hotkey limit. Queue saturation rejects new commits. Yuma keeps its 5,000-byte
+ciphertext limit. These limits include encryption and serialization overhead.
+
+## Operational cost
+
+Null incentive and payout allocation is linear in registered UIDs. The existing
+shared sparse weight-loading and masking path still processes all submitted rows;
+a dense matrix therefore has quadratic data-processing cost. Null avoids the
+quadratic bond update and writes only the ordinary output vectors and payouts.
+
+## Solidity callers
+
+The Subnet precompile at `0x0803` adds `setEpochConsensus(uint16,uint8)` (0 is
+Yuma, 1 is Null), `getEpochConsensus(uint16)`, and `getNullConsensusLimits()`.
+The setter dispatches with the mapped caller's signed origin and enforces the
+same owner, rate, window and population checks as the normal extrinsic.
+
+The Neuron precompile at `0x0804` adds `setMechanismWeightsV2` for rows up to
+16,000 entries and `commitTimelockedMechanismWeightsV2` for ciphertexts up to
+128 KiB. The runtime still applies the selected subnet mode's limits. The
+released `setMechanismWeights` and timelocked selectors preserve their 4,096-entry
+and 5,000-byte input bounds. Existing selectors, types and addresses are unchanged.
+The SDK's vendored ABIs include the new functions.

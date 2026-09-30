@@ -31,6 +31,9 @@ pub const GLOBAL_MAX_SUBNET_COUNT: u16 = 4096;
 // GLOBAL_MAX_SUBNET_COUNT * MAX_MECHANISM_COUNT_PER_SUBNET should be 0x10000
 pub const MAX_MECHANISM_COUNT_PER_SUBNET: u8 = 16;
 
+/// Shared UID capacity across all emission mechanisms in Null consensus.
+pub const NULL_UID_BUDGET: u16 = 16_000;
+
 impl<T: Config> Pallet<T> {
     pub fn get_mechanism_storage_index(netuid: NetUid, sub_id: MechId) -> NetUidStorageIndex {
         u16::from(sub_id)
@@ -96,15 +99,48 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn ensure_max_uids_over_all_mechanisms(
+        netuid: NetUid,
         max_uids: u16,
         mechanism_count: MechId,
     ) -> DispatchResult {
         let max_uids_over_all_mechanisms =
-            max_uids.saturating_mul(u8::from(mechanism_count) as u16);
+            u32::from(max_uids).saturating_mul(u32::from(u8::from(mechanism_count)));
         ensure!(
-            max_uids_over_all_mechanisms <= DefaultMaxAllowedUids::<T>::get(),
+            max_uids_over_all_mechanisms
+                <= u32::from(Self::epoch_uid_budget(Self::get_epoch_consensus(netuid))),
             Error::<T>::TooManyUIDsPerMechanism
         );
+        Ok(())
+    }
+
+    pub fn epoch_uid_budget(mode: EpochConsensus) -> u16 {
+        match mode {
+            EpochConsensus::Yuma => DefaultMaxAllowedUids::<T>::get(),
+            EpochConsensus::Null => NULL_UID_BUDGET,
+        }
+    }
+
+    /// Switch without pruning implicitly. Clamp capacity only after every check.
+    pub fn do_set_epoch_consensus(netuid: NetUid, mode: EpochConsensus) -> DispatchResult {
+        ensure!(Self::if_subnet_exist(netuid), Error::<T>::SubnetNotExists);
+        // Root uses its separate dividend/basket mechanism, not subnet epochs.
+        ensure!(!netuid.is_root(), Error::<T>::InvalidValue);
+        let count = u16::from(u8::from(Self::get_current_mechanism_count(netuid)));
+        let ceiling = Self::epoch_uid_budget(mode)
+            .checked_div(count)
+            .ok_or(Error::<T>::InvalidValue)?;
+        ensure!(
+            Self::get_subnetwork_n(netuid) <= ceiling,
+            Error::<T>::TooManyUIDsPerMechanism
+        );
+        ensure!(
+            Self::get_min_allowed_uids(netuid) <= ceiling,
+            Error::<T>::TooManyUIDsPerMechanism
+        );
+        if Self::get_max_allowed_uids(netuid) > ceiling {
+            Self::set_max_allowed_uids(netuid, ceiling);
+        }
+        Self::set_epoch_consensus(netuid, mode);
         Ok(())
     }
 
@@ -128,7 +164,7 @@ impl<T: Config> Pallet<T> {
 
         // Prevent chain bloat: Require max UIDs to be limited
         let max_uids = MaxAllowedUids::<T>::get(netuid);
-        Self::ensure_max_uids_over_all_mechanisms(max_uids, mechanism_count)?;
+        Self::ensure_max_uids_over_all_mechanisms(netuid, max_uids, mechanism_count)?;
 
         // Make sure we are not allowing numbers that will break the math
         ensure!(

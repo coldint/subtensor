@@ -25,6 +25,7 @@ BoundedVec = Any
 CommitmentInfo = Any
 ConsensusMode = Any
 Determinism = Any
+EpochConsensus = Any
 EquivocationProof = Any
 FixedI128 = Any
 FixedU128 = Any
@@ -1055,6 +1056,11 @@ class AdminUtils:
     def sudo_set_emission_gate_exponent(exponent: 'FixedU128') -> Call:
         'Sets the emission gate Hill exponent (h): cliff sharpness at the bar.'
         return Call('AdminUtils', 'sudo_set_emission_gate_exponent', {'exponent': exponent})
+
+    @staticmethod
+    def sudo_set_epoch_consensus(netuid: 'NetUid', mode: 'EpochConsensus') -> Call:
+        'Selects Yuma or Null reward calculation while preserving epoch scheduling.'
+        return Call('AdminUtils', 'sudo_set_epoch_consensus', {'netuid': netuid, 'mode': mode})
 
     @staticmethod
     def sudo_set_evm_chain_id(chain_id: 'u64') -> Call:

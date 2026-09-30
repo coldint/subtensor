@@ -14,6 +14,16 @@ use sp_std::{collections::btree_set::BTreeSet, collections::vec_deque::VecDeque,
 use subtensor_runtime_common::{MechId, NetUid, NetUidStorageIndex};
 
 impl<T: Config> Pallet<T> {
+    /// Keep the released Yuma cost path, reserving a separate envelope for Null.
+    pub fn timelock_weight_for_mode(netuid: NetUid, yuma: Weight, null: Weight) -> Weight {
+        let weight = if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            null
+        } else {
+            yuma
+        };
+        weight.saturating_add(T::DbWeight::get().reads(1))
+    }
+
     /// Pre-dispatch weight of `batch_set_weights`: the batch overhead plus one full
     /// weight-setting unit per item, sized by that item's uid count. Every item runs a
     /// complete `do_set_weights`, so a constant per-batch weight would let one call book a
@@ -367,6 +377,28 @@ impl<T: Config> Pallet<T> {
         let cur_block = Self::get_current_block_as_u64();
         // Key the commit by the epoch it belongs to under the stateful counter.
         let cur_epoch = Self::current_epoch_with_lookahead(netuid);
+
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            // Admission bounds aggregate reveal work, including every mechanism.
+            let mut queued_bytes = commit.len();
+            let mut queued_count = 1usize;
+            for mechanism in 0..u8::from(Self::get_current_mechanism_count(netuid)) {
+                let index = Self::get_mechanism_storage_index(netuid, mechanism.into());
+                for (_, _, ciphertext, _) in TimelockedWeightCommits::<T>::get(index, cur_epoch) {
+                    queued_bytes = queued_bytes.saturating_add(ciphertext.len());
+                    queued_count = queued_count.saturating_add(1);
+                }
+            }
+            ensure!(
+                queued_bytes <= NULL_COMMIT_QUEUE_BYTES && queued_count <= NULL_COMMIT_QUEUE_COUNT,
+                Error::<T>::CommitQueueFull
+            );
+        } else {
+            ensure!(
+                commit.len() <= YUMA_COMMIT_SIZE_BYTES as usize,
+                Error::<T>::CommitPayloadTooLarge
+            );
+        }
 
         TimelockedWeightCommits::<T>::try_mutate(
             netuid_index,
@@ -833,13 +865,24 @@ impl<T: Config> Pallet<T> {
         );
 
         // --- 14. Max-upscale the weights.
-        let max_upscaled_weights: Vec<u16> = vec_u16_max_upscale_to_u16(&values);
+        let max_upscaled_weights: Vec<u16> =
+            if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+                values
+            } else {
+                vec_u16_max_upscale_to_u16(&values)
+            };
 
         // --- 15. Ensure the weights are max weight limited
-        ensure!(
-            Self::max_weight_limited(netuid, neuron_uid, &uids, &max_upscaled_weights),
-            Error::<T>::MaxWeightExceeded
-        );
+        let max_limited = if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            let sum: u64 = max_upscaled_weights.iter().map(|w| u64::from(*w)).sum();
+            let max = u64::from(max_upscaled_weights.iter().copied().max().unwrap_or(0));
+            Self::is_self_weight(neuron_uid, &uids, &max_upscaled_weights)
+                || max.saturating_mul(u64::from(u16::MAX))
+                    <= sum.saturating_mul(u64::from(Self::get_max_weight_limit(netuid)))
+        } else {
+            Self::max_weight_limited(netuid, neuron_uid, &uids, &max_upscaled_weights)
+        };
+        ensure!(max_limited, Error::<T>::MaxWeightExceeded);
 
         // --- 16. Zip weights for sinking to storage map.
         let mut zipped_weights: Vec<(u16, u16)> = vec![];

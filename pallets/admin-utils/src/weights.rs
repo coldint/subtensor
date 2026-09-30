@@ -77,6 +77,10 @@ pub trait WeightInfo {
 	fn sudo_set_liquid_alpha_enabled() -> Weight;
 	fn sudo_set_alpha_values() -> Weight;
 	fn sudo_set_liquid_alpha_consensus_mode() -> Weight;
+	/// Reuses the existing admin setter weight until reference benchmarks regenerate it.
+	fn sudo_set_epoch_consensus() -> Weight {
+		Self::sudo_set_alpha_values()
+	}
 	fn sudo_set_coldkey_swap_announcement_delay() -> Weight;
 	fn sudo_set_coldkey_swap_reannouncement_delay() -> Weight;
 	fn sudo_set_dissolve_network_schedule_duration() -> Weight;

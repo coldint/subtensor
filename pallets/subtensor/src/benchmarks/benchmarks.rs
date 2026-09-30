@@ -777,7 +777,17 @@ mod pallet_benchmarks {
 
     #[benchmark]
     fn block_step() {
-        setup_block_step_benchmark::<T>();
+        setup_block_step_benchmark::<T>(true);
+
+        #[block]
+        {
+            assert_ok!(Subtensor::<T>::block_step());
+        }
+    }
+
+    #[benchmark]
+    fn block_step_yuma() {
+        setup_block_step_benchmark::<T>(false);
 
         #[block]
         {
@@ -2007,7 +2017,7 @@ mod pallet_benchmarks {
     fn commit_timelocked_weights() {
         let hotkey: T::AccountId = whitelisted_caller();
         let netuid = NetUid::from(1);
-        let vec_commit: Vec<u8> = vec![0; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let vec_commit: Vec<u8> = vec![0; YUMA_COMMIT_SIZE_BYTES as usize];
         let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
         let round: u64 = 0;
 
@@ -2914,7 +2924,7 @@ mod pallet_benchmarks {
         let mecid = subtensor_runtime_common::MechId::MAIN;
         let (netuid, hotkey, _uids, _weight_values, _salt, _version_key) =
             setup_mechanism_weight_benchmark::<T>(mecid, 4096);
-        let vec_commit: Vec<u8> = vec![u8::MAX; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let vec_commit: Vec<u8> = vec![u8::MAX; YUMA_COMMIT_SIZE_BYTES as usize];
         let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
         let netuid_index = Subtensor::<T>::get_mechanism_storage_index(netuid, mecid);
         let epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
@@ -2939,7 +2949,7 @@ mod pallet_benchmarks {
         let mecid = subtensor_runtime_common::MechId::MAIN;
         let (netuid, hotkey, _uids, _weight_values, _salt, _version_key) =
             setup_mechanism_weight_benchmark::<T>(mecid, 4096);
-        let vec_commit: Vec<u8> = vec![u8::MAX; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let vec_commit: Vec<u8> = vec![u8::MAX; YUMA_COMMIT_SIZE_BYTES as usize];
         let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
         let netuid_index = Subtensor::<T>::get_mechanism_storage_index(netuid, mecid);
         let epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
@@ -2958,6 +2968,139 @@ mod pallet_benchmarks {
             commit,
             u64::MAX,
             version,
+        );
+    }
+
+    #[benchmark]
+    fn commit_crv3_mechanism_weights_null() {
+        use subtensor_runtime_common::MechId;
+        let mecid = subtensor_runtime_common::MechId::MAIN;
+        let (netuid, hotkey, _uids, _weight_values, _salt, _version_key) =
+            setup_mechanism_weight_benchmark::<T>(mecid, 1000);
+        let vec_commit: Vec<u8> = vec![u8::MAX; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
+        Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
+        Subtensor::<T>::set_max_allowed_uids(netuid, 1000);
+        MechanismCountCurrent::<T>::insert(netuid, MechId::from(16));
+        let queue_index = Subtensor::<T>::get_mechanism_storage_index(netuid, MechId::from(1));
+        let queue_epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
+        let mut queue = VecDeque::new();
+        for i in 0..63u64 {
+            let length = if i == 62 {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize
+                    - 62 * (MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63)
+            } else {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63
+            };
+            let queued: BoundedVec<u8, ConstU32<MAX_CRV3_COMMIT_SIZE_BYTES>> =
+                vec![0u8; length].try_into().unwrap();
+            queue.push_back((account("queued", (i / 10) as u32, 0), 0, queued, i));
+        }
+        TimelockedWeightCommits::<T>::insert(queue_index, queue_epoch, queue);
+
+        #[extrinsic_call]
+        commit_crv3_mechanism_weights(
+            RawOrigin::Signed(hotkey.clone()),
+            netuid,
+            mecid,
+            commit,
+            u64::MAX,
+        );
+    }
+
+    #[benchmark]
+    fn commit_timelocked_mechanism_weights_null() {
+        use subtensor_runtime_common::MechId;
+        let mecid = subtensor_runtime_common::MechId::MAIN;
+        let (netuid, hotkey, _uids, _weight_values, _salt, _version_key) =
+            setup_mechanism_weight_benchmark::<T>(mecid, 1000);
+        let vec_commit: Vec<u8> = vec![u8::MAX; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
+        let version = Subtensor::<T>::get_commit_reveal_weights_version();
+        Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
+        Subtensor::<T>::set_max_allowed_uids(netuid, 1000);
+        MechanismCountCurrent::<T>::insert(netuid, MechId::from(16));
+        let queue_index = Subtensor::<T>::get_mechanism_storage_index(netuid, MechId::from(1));
+        let queue_epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
+        let mut queue = VecDeque::new();
+        for i in 0..63u64 {
+            let length = if i == 62 {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize
+                    - 62 * (MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63)
+            } else {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63
+            };
+            let queued: BoundedVec<u8, ConstU32<MAX_CRV3_COMMIT_SIZE_BYTES>> =
+                vec![0u8; length].try_into().unwrap();
+            queue.push_back((account("queued", (i / 10) as u32, 0), 0, queued, i));
+        }
+        TimelockedWeightCommits::<T>::insert(queue_index, queue_epoch, queue);
+
+        #[extrinsic_call]
+        commit_timelocked_mechanism_weights(
+            RawOrigin::Signed(hotkey.clone()),
+            netuid,
+            mecid,
+            commit,
+            u64::MAX,
+            version,
+        );
+    }
+
+    #[benchmark]
+    fn commit_timelocked_weights_null() {
+        use subtensor_runtime_common::MechId;
+        let hotkey: T::AccountId = whitelisted_caller();
+        let netuid = NetUid::from(1);
+        let vec_commit: Vec<u8> = vec![0; MAX_CRV3_COMMIT_SIZE_BYTES as usize];
+        let commit: BoundedVec<_, _> = vec_commit.try_into().unwrap();
+        let round: u64 = 0;
+
+        Subtensor::<T>::init_new_network(netuid, 1);
+        Subtensor::<T>::set_network_registration_allowed(netuid, true);
+        SubtokenEnabled::<T>::insert(netuid, true);
+
+        Subtensor::<T>::set_burn(netuid, benchmark_registration_burn());
+        seed_swap_reserves::<T>(netuid);
+        fund_for_registration::<T>(netuid, &hotkey);
+
+        assert_ok!(Subtensor::<T>::burned_register(
+            RawOrigin::Signed(hotkey.clone()).into(),
+            netuid,
+            hotkey.clone()
+        ));
+
+        // Ensure caller is allowed to commit (common requirement for weights ops).
+        Subtensor::<T>::set_validator_permit_for_uid(netuid, 0, true);
+
+        Subtensor::<T>::set_commit_reveal_weights_enabled(netuid, true);
+        WeightsSetRateLimit::<T>::set(netuid, 0);
+
+        Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
+        MechanismCountCurrent::<T>::insert(netuid, MechId::from(16));
+        let queue_index = Subtensor::<T>::get_mechanism_storage_index(netuid, MechId::from(1));
+        let queue_epoch = Subtensor::<T>::current_epoch_with_lookahead(netuid);
+        let mut queue = VecDeque::new();
+        for i in 0..63u64 {
+            let length = if i == 62 {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize
+                    - 62 * (MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63)
+            } else {
+                MAX_CRV3_COMMIT_SIZE_BYTES as usize / 63
+            };
+            let queued: BoundedVec<u8, ConstU32<MAX_CRV3_COMMIT_SIZE_BYTES>> =
+                vec![0u8; length].try_into().unwrap();
+            queue.push_back((account("queued", (i / 10) as u32, 0), 0, queued, i));
+        }
+        TimelockedWeightCommits::<T>::insert(queue_index, queue_epoch, queue);
+
+        #[extrinsic_call]
+        commit_timelocked_weights(
+            RawOrigin::Signed(hotkey.clone()),
+            netuid,
+            commit.clone(),
+            round,
+            Subtensor::<T>::get_commit_reveal_weights_version(),
         );
     }
 

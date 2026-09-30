@@ -3,6 +3,7 @@ use crate::epoch::math::*;
 use alloc::collections::{BTreeMap, BTreeSet};
 use frame_support::IterableStorageDoubleMap;
 use safe_math::*;
+use sp_core::U256;
 use sp_runtime::PerU16;
 use sp_std::collections::btree_map::IntoIter;
 use sp_std::vec;
@@ -58,6 +59,35 @@ macro_rules! extract_from_sorted_terms {
     }};
 }
 
+/// Apportion whole units in UID order using exact cumulative ratios. Each
+/// participant receives its floor or ceiling share; the total is exactly the
+/// budget when any share is nonzero, and zero otherwise. U256 accommodates
+/// I64F64 stake bits multiplied by a u64 emission budget without overflow.
+pub(crate) fn apportion_units(shares: &[u128], budget: u64) -> Vec<AlphaBalance> {
+    let total = shares.iter().fold(U256::zero(), |sum, share| {
+        sum.saturating_add(U256::from(*share))
+    });
+    if total.is_zero() {
+        return vec![AlphaBalance::from(0u64); shares.len()];
+    }
+    let mut prefix = U256::zero();
+    let mut allocated = 0u64;
+    shares
+        .iter()
+        .map(|share| {
+            prefix = prefix.saturating_add(U256::from(*share));
+            let through = prefix
+                .saturating_mul(U256::from(budget))
+                .checked_div(total)
+                .unwrap_or_default()
+                .low_u64();
+            let payout = through.saturating_sub(allocated);
+            allocated = through;
+            AlphaBalance::from(payout)
+        })
+        .collect()
+}
+
 impl<T: Config> Pallet<T> {
     /// Legacy epoch function interface (TODO: Is only used for tests, remove)
     pub fn epoch(
@@ -98,11 +128,6 @@ impl<T: Config> Pallet<T> {
 
         let incentive = extract_from_sorted_terms!(terms_sorted, incentive);
         let consensus = extract_from_sorted_terms!(terms_sorted, consensus);
-        let bonds: Vec<Vec<(u16, u16)>> = terms_sorted
-            .iter()
-            .cloned()
-            .map(|t| t.bond.clone())
-            .collect::<sp_std::vec::Vec<_>>();
 
         // Epoch math stays in raw u16; wrap into PerU16 only at the storage boundary.
         let incentive: Vec<PerU16> = incentive.into_iter().map(PerU16::from_parts).collect();
@@ -116,13 +141,21 @@ impl<T: Config> Pallet<T> {
             emissions: server_emission,
         });
 
-        bonds
-            .into_iter()
-            .enumerate()
-            .for_each(|(uid_usize, bond_vec)| {
-                let uid: u16 = uid_usize.try_into().unwrap_or_default();
-                Bonds::<T>::insert(netuid_index, uid, bond_vec);
-            });
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Yuma {
+            let bonds: Vec<Vec<(u16, u16)>> = terms_sorted
+                .iter()
+                .cloned()
+                .map(|t| t.bond.clone())
+                .collect::<sp_std::vec::Vec<_>>();
+
+            bonds
+                .into_iter()
+                .enumerate()
+                .for_each(|(uid_usize, bond_vec)| {
+                    let uid: u16 = uid_usize.try_into().unwrap_or_default();
+                    Bonds::<T>::insert(netuid_index, uid, bond_vec);
+                });
+        }
     }
 
     /// Persists per-netuid epoch output in state
@@ -163,6 +196,16 @@ impl<T: Config> Pallet<T> {
         mecid: MechId,
         rao_emission: AlphaBalance,
     ) -> Vec<(T::AccountId, AlphaBalance, AlphaBalance)> {
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            let output = Self::epoch_mechanism(netuid, mecid, rao_emission);
+            Self::persist_mechanism_epoch_terms(netuid, mecid, output.as_map());
+            Self::persist_netuid_epoch_terms(netuid, output.as_map());
+            return output
+                .into_iter()
+                .map(|(hotkey, terms)| (hotkey, terms.server_emission, terms.validator_emission))
+                .collect();
+        }
+
         // Calculate netuid storage index
         let netuid_index = Self::get_mechanism_storage_index(netuid, mecid);
 
@@ -820,150 +863,242 @@ impl<T: Config> Pallet<T> {
             );
         }
 
-        // Normalize remaining weights.
-        inplace_row_normalize_sparse(&mut weights);
-        log::trace!("Weights (mask+norm): {:?}", &weights);
-
-        // ================================
-        // == Consensus, Validator Trust ==
-        // ================================
-
-        // Consensus majority ratio, e.g. 51%.
-        let kappa: I32F32 = Self::get_float_kappa(netuid);
-        // Calculate consensus as stake-weighted median of weights.
-        let consensus: Vec<I32F32> = weighted_median_col_sparse(&active_stake, &weights, n, kappa);
-        log::trace!("Consensus: {:?}", &consensus);
-
-        // Clip weights at majority consensus.
-        let clipped_weights: Vec<Vec<(u16, I32F32)>> = col_clip_sparse(&weights, &consensus);
-        log::trace!("Clipped Weights: {:?}", &clipped_weights);
-
-        // Calculate validator trust as sum of clipped weights set by validator.
-        let validator_trust: Vec<I32F32> = row_sum_sparse(&clipped_weights);
-        log::trace!("Validator Trust: {:?}", &validator_trust);
-
-        // =============================
-        // == Ranks, Trust, Incentive ==
-        // =============================
-
-        // Compute ranks: r_j = SUM(i) w_ij * s_i.
-        let mut ranks: Vec<I32F32> = matmul_sparse(&clipped_weights, &active_stake, n);
-
-        inplace_normalize(&mut ranks); // range: I32F32(0, 1)
-        let incentive: Vec<I32F32> = ranks.clone();
-        log::trace!("Incentive (=Rank): {:?}", &incentive);
-
-        // =========================
-        // == Bonds and Dividends ==
-        // =========================
-
-        // Get validator bonds penalty in [0, 1].
-        let bonds_penalty: I32F32 = Self::get_float_bonds_penalty(netuid);
-        // Calculate weights for bonds, apply bonds penalty to weights.
-        // bonds_penalty = 0: weights_for_bonds = weights.clone()
-        // bonds_penalty = 1: weights_for_bonds = clipped_weights.clone()
-        let weights_for_bonds: Vec<Vec<(u16, I32F32)>> =
-            interpolate_sparse(&weights, &clipped_weights, n, bonds_penalty);
-
-        let mut dividends: Vec<I32F32>;
-        let mut ema_bonds: Vec<Vec<(u16, I32F32)>>;
-        if Yuma3On::<T>::get(netuid) {
-            // Access network bonds.
-            let mut bonds = Self::get_bonds_sparse_fixed_proportion(netuid_index);
-            log::trace!("Bonds: {:?}", &bonds);
-
-            // Remove bonds referring to neurons that have registered since last tempo.
-            // Mask if: the last tempo block happened *before* the registration block
-            // ==> last_tempo <= registered
-            // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
-            let lms = LastMechansimStepBlock::<T>::get(netuid);
-            let last_tempo: u64 = if lms == 0 {
-                current_block.saturating_sub(tempo)
-            } else {
-                lms.saturating_add(1)
-            };
-            bonds = scalar_vec_mask_sparse_matrix(
-                &bonds,
-                last_tempo,
-                &block_at_registration,
-                &|last_tempo, registered| last_tempo <= registered,
-            );
-            log::trace!("Bonds: (mask) {:?}", &bonds);
-
-            // Compute the Exponential Moving Average (EMA) of bonds.
-            log::trace!("weights_for_bonds: {:?}", &weights_for_bonds);
-            ema_bonds =
-                Self::compute_bonds_sparse(netuid_index, &weights_for_bonds, &bonds, &consensus);
-            log::trace!("emaB: {:?}", &ema_bonds);
-
-            // Normalize EMA bonds.
-            let mut ema_bonds_norm = ema_bonds.clone();
-            inplace_col_normalize_sparse(&mut ema_bonds_norm, n); // sum_i b_ij = 1
-            log::trace!("emaB norm: {:?}", &ema_bonds_norm);
-
-            // # === Dividend Calculation===
-            let total_bonds_per_validator: Vec<I32F32> =
-                row_sum_sparse(&mat_vec_mul_sparse(&ema_bonds_norm, &incentive));
-            log::trace!(
-                "total_bonds_per_validator: {:?}",
-                &total_bonds_per_validator
-            );
-
-            dividends = vec_mul(&total_bonds_per_validator, &active_stake);
-            inplace_normalize(&mut dividends);
-            log::trace!("Dividends: {:?}", &dividends);
-        } else {
-            // original Yuma - liquid alpha disabled
-            // Access network bonds.
-            let mut bonds: Vec<Vec<(u16, I32F32)>> = Self::get_bonds_sparse(netuid_index);
-            log::trace!("B: {:?}", &bonds);
-
-            // Remove bonds referring to neurons that have registered since last tempo.
-            // Mask if: the last tempo block happened *before* the registration block
-            // ==> last_tempo <= registered
-            // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
-            let lms = LastMechansimStepBlock::<T>::get(netuid);
-            let last_tempo: u64 = if lms == 0 {
-                current_block.saturating_sub(tempo)
-            } else {
-                lms.saturating_add(1)
-            };
-            bonds = scalar_vec_mask_sparse_matrix(
-                &bonds,
-                last_tempo,
-                &block_at_registration,
-                &|last_tempo, registered| last_tempo <= registered,
-            );
-            log::trace!("B (outdatedmask): {:?}", &bonds);
-
-            // Normalize remaining bonds: sum_i b_ij = 1.
-            inplace_col_normalize_sparse(&mut bonds, n);
-            log::trace!("B (mask+norm): {:?}", &bonds);
-
-            // Compute bonds delta column normalized.
-            let mut bonds_delta: Vec<Vec<(u16, I32F32)>> =
-                row_hadamard_sparse(&weights_for_bonds, &active_stake); // ΔB = W◦S (outdated W masked)
-            log::trace!("ΔB: {:?}", &bonds_delta);
-
-            // Normalize bonds delta.
-            inplace_col_normalize_sparse(&mut bonds_delta, n); // sum_i b_ij = 1
-            log::trace!("ΔB (norm): {:?}", &bonds_delta);
-
-            // Compute the Exponential Moving Average (EMA) of bonds.
-            ema_bonds = Self::compute_ema_bonds_normal_sparse(&bonds_delta, &bonds, netuid_index);
-            // Normalize EMA bonds.
-            inplace_col_normalize_sparse(&mut ema_bonds, n); // sum_i b_ij = 1
-            log::trace!("Exponential Moving Average Bonds: {:?}", &ema_bonds);
-
-            // Compute dividends: d_i = SUM(j) b_ij * inc_j.
-            // range: I32F32(0, 1)
-            dividends = matmul_transpose_sparse(&ema_bonds, &incentive);
-            inplace_normalize(&mut dividends);
-            log::trace!("Dividends: {:?}", &dividends);
-
-            // Column max-upscale EMA bonds for storage: max_i w_ij = 1.
-            inplace_col_max_upscale_sparse(&mut ema_bonds, n);
+        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
+        // Null retains the masked integer ratios for payouts. The shared weight
+        // getter and all registration/commit masks remain unchanged.
+        if !is_null {
+            inplace_row_normalize_sparse(&mut weights);
+            log::trace!("Weights (mask+norm): {:?}", &weights);
         }
+        let mut null_payouts = None;
+
+        let (consensus, validator_trust, incentive, dividends, ema_bonds) = if is_null {
+            // Inactive permitted validators still receive dividends. Retain the
+            // original stake precision for allocation, independent of reporting.
+            let dividend_shares: Vec<u128> = total_stake
+                .iter()
+                .enumerate()
+                .map(|(uid, stake)| {
+                    if validator_forbids.get(uid).copied().unwrap_or(true)
+                        || (owner_uid != Some(uid as u16) && fixed64_to_u64(*stake) < min_stake)
+                        || *stake <= I64F64::from(0)
+                    {
+                        0
+                    } else {
+                        stake.to_bits() as u128
+                    }
+                })
+                .collect();
+            let mut dividend_report: Vec<I64F64> = dividend_shares
+                .iter()
+                .map(|bits| I64F64::from_bits(*bits as i128))
+                .collect();
+            inplace_normalize_64(&mut dividend_report);
+            let dividends = vec_fixed64_to_fixed32(dividend_report);
+
+            // Compare the original stake precision, and retain the first UID on ties.
+            let mut winner: Option<usize> = None;
+            for (uid, &raw_stake) in total_stake.iter().enumerate() {
+                if validator_forbids.get(uid).copied().unwrap_or(true)
+                    || (owner_uid != Some(uid as u16) && fixed64_to_u64(raw_stake) < min_stake)
+                    || raw_stake <= I64F64::from(0)
+                {
+                    continue;
+                }
+                if winner.is_none_or(|previous| {
+                    total_stake
+                        .get(previous)
+                        .is_some_and(|old| raw_stake > *old)
+                }) {
+                    winner = Some(uid);
+                }
+            }
+            let mut incentive_shares = vec![0u128; n as usize];
+            if let Some(row) = winner.and_then(|uid| weights.get(uid)) {
+                for &(uid, weight) in row {
+                    if let Some(value) = incentive_shares.get_mut(uid as usize) {
+                        *value = u128::from(weight.saturating_to_num::<u16>());
+                    }
+                }
+            }
+            if incentive_shares.iter().all(|share| *share == 0) {
+                // Every registered UID participates in the empty-weight fallback.
+                incentive_shares.fill(1);
+            }
+            let mut incentive_report: Vec<I64F64> = incentive_shares
+                .iter()
+                .map(|share| I64F64::saturating_from_num(*share))
+                .collect();
+            inplace_normalize_64(&mut incentive_report);
+            let incentive = vec_fixed64_to_fixed32(incentive_report);
+            let epoch_budget = u64::from(rao_emission);
+            let validator_budget = if dividend_shares.iter().any(|share| *share > 0) {
+                epoch_budget / 2
+            } else {
+                0
+            };
+            let miner_budget = epoch_budget.saturating_sub(validator_budget);
+            null_payouts = Some((
+                apportion_units(&incentive_shares, miner_budget),
+                apportion_units(&dividend_shares, validator_budget),
+            ));
+            (
+                vec![I32F32::from(0); n as usize],
+                vec![I32F32::from(0); n as usize],
+                incentive,
+                dividends,
+                Vec::new(),
+            )
+        } else {
+            // ================================
+            // == Consensus, Validator Trust ==
+            // ================================
+
+            // Consensus majority ratio, e.g. 51%.
+            let kappa: I32F32 = Self::get_float_kappa(netuid);
+            // Calculate consensus as stake-weighted median of weights.
+            let consensus: Vec<I32F32> =
+                weighted_median_col_sparse(&active_stake, &weights, n, kappa);
+            log::trace!("Consensus: {:?}", &consensus);
+
+            // Clip weights at majority consensus.
+            let clipped_weights: Vec<Vec<(u16, I32F32)>> = col_clip_sparse(&weights, &consensus);
+            log::trace!("Clipped Weights: {:?}", &clipped_weights);
+
+            // Calculate validator trust as sum of clipped weights set by validator.
+            let validator_trust: Vec<I32F32> = row_sum_sparse(&clipped_weights);
+            log::trace!("Validator Trust: {:?}", &validator_trust);
+
+            // =============================
+            // == Ranks, Trust, Incentive ==
+            // =============================
+
+            // Compute ranks: r_j = SUM(i) w_ij * s_i.
+            let mut ranks: Vec<I32F32> = matmul_sparse(&clipped_weights, &active_stake, n);
+
+            inplace_normalize(&mut ranks); // range: I32F32(0, 1)
+            let incentive: Vec<I32F32> = ranks.clone();
+            log::trace!("Incentive (=Rank): {:?}", &incentive);
+
+            // =========================
+            // == Bonds and Dividends ==
+            // =========================
+
+            // Get validator bonds penalty in [0, 1].
+            let bonds_penalty: I32F32 = Self::get_float_bonds_penalty(netuid);
+            // Calculate weights for bonds, apply bonds penalty to weights.
+            // bonds_penalty = 0: weights_for_bonds = weights.clone()
+            // bonds_penalty = 1: weights_for_bonds = clipped_weights.clone()
+            let weights_for_bonds: Vec<Vec<(u16, I32F32)>> =
+                interpolate_sparse(&weights, &clipped_weights, n, bonds_penalty);
+
+            let mut dividends: Vec<I32F32>;
+            let mut ema_bonds: Vec<Vec<(u16, I32F32)>>;
+            if Yuma3On::<T>::get(netuid) {
+                // Access network bonds.
+                let mut bonds = Self::get_bonds_sparse_fixed_proportion(netuid_index);
+                log::trace!("Bonds: {:?}", &bonds);
+
+                // Remove bonds referring to neurons that have registered since last tempo.
+                // Mask if: the last tempo block happened *before* the registration block
+                // ==> last_tempo <= registered
+                // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
+                let lms = LastMechansimStepBlock::<T>::get(netuid);
+                let last_tempo: u64 = if lms == 0 {
+                    current_block.saturating_sub(tempo)
+                } else {
+                    lms.saturating_add(1)
+                };
+                bonds = scalar_vec_mask_sparse_matrix(
+                    &bonds,
+                    last_tempo,
+                    &block_at_registration,
+                    &|last_tempo, registered| last_tempo <= registered,
+                );
+                log::trace!("Bonds: (mask) {:?}", &bonds);
+
+                // Compute the Exponential Moving Average (EMA) of bonds.
+                log::trace!("weights_for_bonds: {:?}", &weights_for_bonds);
+                ema_bonds = Self::compute_bonds_sparse(
+                    netuid_index,
+                    &weights_for_bonds,
+                    &bonds,
+                    &consensus,
+                );
+                log::trace!("emaB: {:?}", &ema_bonds);
+
+                // Normalize EMA bonds.
+                let mut ema_bonds_norm = ema_bonds.clone();
+                inplace_col_normalize_sparse(&mut ema_bonds_norm, n); // sum_i b_ij = 1
+                log::trace!("emaB norm: {:?}", &ema_bonds_norm);
+
+                // # === Dividend Calculation===
+                let total_bonds_per_validator: Vec<I32F32> =
+                    row_sum_sparse(&mat_vec_mul_sparse(&ema_bonds_norm, &incentive));
+                log::trace!(
+                    "total_bonds_per_validator: {:?}",
+                    &total_bonds_per_validator
+                );
+
+                dividends = vec_mul(&total_bonds_per_validator, &active_stake);
+                inplace_normalize(&mut dividends);
+                log::trace!("Dividends: {:?}", &dividends);
+            } else {
+                // original Yuma - liquid alpha disabled
+                // Access network bonds.
+                let mut bonds: Vec<Vec<(u16, I32F32)>> = Self::get_bonds_sparse(netuid_index);
+                log::trace!("B: {:?}", &bonds);
+
+                // Remove bonds referring to neurons that have registered since last tempo.
+                // Mask if: the last tempo block happened *before* the registration block
+                // ==> last_tempo <= registered
+                // For dynamic tempo - we pick previous-successful-epoch block: `LastMechansimStepBlock + 1`
+                let lms = LastMechansimStepBlock::<T>::get(netuid);
+                let last_tempo: u64 = if lms == 0 {
+                    current_block.saturating_sub(tempo)
+                } else {
+                    lms.saturating_add(1)
+                };
+                bonds = scalar_vec_mask_sparse_matrix(
+                    &bonds,
+                    last_tempo,
+                    &block_at_registration,
+                    &|last_tempo, registered| last_tempo <= registered,
+                );
+                log::trace!("B (outdatedmask): {:?}", &bonds);
+
+                // Normalize remaining bonds: sum_i b_ij = 1.
+                inplace_col_normalize_sparse(&mut bonds, n);
+                log::trace!("B (mask+norm): {:?}", &bonds);
+
+                // Compute bonds delta column normalized.
+                let mut bonds_delta: Vec<Vec<(u16, I32F32)>> =
+                    row_hadamard_sparse(&weights_for_bonds, &active_stake); // ΔB = W◦S (outdated W masked)
+                log::trace!("ΔB: {:?}", &bonds_delta);
+
+                // Normalize bonds delta.
+                inplace_col_normalize_sparse(&mut bonds_delta, n); // sum_i b_ij = 1
+                log::trace!("ΔB (norm): {:?}", &bonds_delta);
+
+                // Compute the Exponential Moving Average (EMA) of bonds.
+                ema_bonds =
+                    Self::compute_ema_bonds_normal_sparse(&bonds_delta, &bonds, netuid_index);
+                // Normalize EMA bonds.
+                inplace_col_normalize_sparse(&mut ema_bonds, n); // sum_i b_ij = 1
+                log::trace!("Exponential Moving Average Bonds: {:?}", &ema_bonds);
+
+                // Compute dividends: d_i = SUM(j) b_ij * inc_j.
+                // range: I32F32(0, 1)
+                dividends = matmul_transpose_sparse(&ema_bonds, &incentive);
+                inplace_normalize(&mut dividends);
+                log::trace!("Dividends: {:?}", &dividends);
+
+                // Column max-upscale EMA bonds for storage: max_i w_ij = 1.
+                inplace_col_max_upscale_sparse(&mut ema_bonds, n);
+            }
+
+            (consensus, validator_trust, incentive, dividends, ema_bonds)
+        };
 
         // =================================
         // == Emission and Pruning scores ==
@@ -1028,6 +1163,19 @@ impl<T: Config> Pallet<T> {
             .iter()
             .map(|e: &I96F32| AlphaBalance::from(e.saturating_to_num::<u64>()))
             .collect();
+
+        // Displayed proportions never feed back into Null emission amounts.
+        let (server_emission, validator_emission, combined_emission) =
+            if let Some((miners, validators)) = null_payouts {
+                let combined = miners
+                    .iter()
+                    .zip(&validators)
+                    .map(|(miner, validator)| miner.saturating_add(*validator))
+                    .collect();
+                (miners, validators, combined)
+            } else {
+                (server_emission, validator_emission, combined_emission)
+            };
 
         log::trace!(
             "Normalized Server Emission: {:?}",
@@ -1104,6 +1252,9 @@ impl<T: Config> Pallet<T> {
                 .unwrap_or_default();
 
             // Bonds
+            if is_null {
+                continue;
+            }
             if terms.new_validator_permit {
                 let ema_bond = ema_bonds.get(terms.uid).cloned().unwrap_or_default();
                 terms.bond = ema_bond

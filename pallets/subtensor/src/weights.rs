@@ -57,7 +57,26 @@ pub trait WeightInfo {
 	fn batch_reveal_weights() -> Weight;
 	fn recycle_alpha() -> Weight;
 	fn burn_alpha() -> Weight;
+	/// Conservative envelope derived from the legacy weight until reference measurement.
+	fn commit_crv3_mechanism_weights_null() -> Weight {
+		Self::commit_crv3_mechanism_weights().saturating_mul(u64::from(crate::MAX_CRV3_COMMIT_SIZE_BYTES.div_ceil(crate::YUMA_COMMIT_SIZE_BYTES)))
+	}
+
+	/// Conservative envelope derived from the legacy weight until reference measurement.
+	fn commit_timelocked_weights_null() -> Weight {
+		Self::commit_timelocked_weights().saturating_mul(u64::from(crate::MAX_CRV3_COMMIT_SIZE_BYTES.div_ceil(crate::YUMA_COMMIT_SIZE_BYTES)))
+	}
+
+	/// Conservative envelope derived from the legacy weight until reference measurement.
+	fn commit_timelocked_mechanism_weights_null() -> Weight {
+		Self::commit_timelocked_mechanism_weights().saturating_mul(u64::from(crate::MAX_CRV3_COMMIT_SIZE_BYTES.div_ceil(crate::YUMA_COMMIT_SIZE_BYTES)))
+	}
+
 	fn block_step() -> Weight;
+	/// Legacy Yuma hook envelope, independently measured from large Null epochs.
+	fn block_step_yuma() -> Weight {
+		Self::block_step()
+	}
 	fn start_call() -> Weight;
 	fn add_stake_limit() -> Weight;
 	fn move_stake() -> Weight;
