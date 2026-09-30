@@ -121,20 +121,24 @@ function assertMetadataAvailable() {
 async function fundTestAccounts() {
   const evmWallet = getEvmWallet();
   const accounts = [
-    [stakeColdkey.address, "stake coldkey"],
-    [stakeDest.address, "stake destination"],
-    [burnColdkey.address, "burn coldkey"],
-    [subnetOwner.address, "subnet owner"],
-    [replacementOwner.address, "replacement owner"],
-    [evmAddressToSs58(evmWallet.address), "EVM mapped account"],
-  ];
-  const calls = accounts.map(([address]) => balancesTransfer(address, FUND_AMOUNT));
+    [stakeColdkey.address, "stake coldkey", FUND_AMOUNT],
+    [stakeDest.address, "stake destination", FUND_AMOUNT],
+    [burnColdkey.address, "burn coldkey", FUND_AMOUNT],
+    [subnetOwner.address, "subnet owner", FUND_AMOUNT],
+    [replacementOwner.address, "replacement owner", FUND_AMOUNT],
+    [
+      evmAddressToSs58(evmWallet.address),
+      "EVM mapped account",
+      BigInt(process.env.TOTAL_ISSUANCE_EVM_FUND_AMOUNT ?? "1000000000000000"),
+    ],
+  ] as const;
+  const calls = accounts.map(([address, , amount]) => balancesTransfer(address, amount));
   await signedBatch(fundSource, calls, "batch transfer test funding");
   await assertIssuanceMatch("after setup funding transfers");
 
-  for (const [address, label] of accounts) {
+  for (const [address, label, amount] of accounts) {
     const free = (await api.query.system.account(address)).data.free.toBigInt();
-    assert.ok(free >= FUND_AMOUNT, `${label} funding failed: free=${free}`);
+    assert.ok(free >= amount, `${label} funding failed: free=${free}`);
     console.log(`${label} funded:`, address, free.toString());
   }
 }
