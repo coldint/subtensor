@@ -12,6 +12,7 @@ const WS_ENDPOINT = process.env.WS_ENDPOINT ?? "ws://127.0.0.1:9944";
 const ETH_RPC_ENDPOINT = process.env.ETH_RPC_ENDPOINT ?? "http://127.0.0.1:9944";
 const RUN_ID = process.env.TOTAL_ISSUANCE_RUN_ID ?? `run${Date.now()}p${process.pid}`;
 const FUND_SOURCE_URI = process.env.TOTAL_ISSUANCE_FUND_SOURCE_URI ?? "//Alice";
+const FUND_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_FUND_AMOUNT ?? "5000000000000");
 const EVM_GAS_PRICE = BigInt(process.env.TOTAL_ISSUANCE_EVM_GAS_PRICE ?? "10");
 const STAKE_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_STAKE_AMOUNT ?? "10000000000");
 const TRANSFER_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_TRANSFER_AMOUNT ?? "1000000000");
