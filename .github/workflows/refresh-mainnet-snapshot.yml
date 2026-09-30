@@ -107,6 +107,37 @@ jobs:
           # The tarball is already gzipped.
           compression-level: 0
 
+      - name: Ensure AWS CLI for R2 mirror
+        run: |
+          set -euo pipefail
+          if ! command -v aws >/dev/null 2>&1; then
+            archive="$RUNNER_TEMP/awscliv2.zip"
+            install_dir="$RUNNER_TEMP/aws-cli"
+            bin_dir="$RUNNER_TEMP/aws-bin"
+            mkdir -p "$bin_dir"
+            curl --fail --silent --show-error --location \
+              https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+              --output "$archive"
+            rm -rf "$RUNNER_TEMP/aws"
+            if command -v unzip >/dev/null 2>&1; then
+              unzip -q "$archive" -d "$RUNNER_TEMP"
+            else
+              python3 - "$archive" "$RUNNER_TEMP" <<'PY'
+              import sys
+              import zipfile
+
+              with zipfile.ZipFile(sys.argv[1]) as archive:
+                  archive.extractall(sys.argv[2])
+              PY
+            fi
+            "$RUNNER_TEMP/aws/install" \
+              --bin-dir "$bin_dir" \
+              --install-dir "$install_dir" \
+              --update
+            echo "$bin_dir" >> "$GITHUB_PATH"
+          fi
+          aws --version
+
       - name: Mirror snapshot for fleet prefetch
         env:
           GH_TOKEN: ${{ github.token }}
