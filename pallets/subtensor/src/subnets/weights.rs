@@ -28,12 +28,36 @@ impl<T: Config> Pallet<T> {
     /// weight-setting unit per item, sized by that item's uid count. Every item runs a
     /// complete `do_set_weights`, so a constant per-batch weight would let one call book a
     /// fraction of the work it performs.
-    pub fn batch_set_weights_weight(weights: &[Vec<(Compact<u16>, Compact<u16>)>]) -> Weight {
-        weights.iter().fold(
+    pub fn set_weights_weight(netuid: NetUid, uids: u32) -> Weight {
+        Self::timelock_weight_for_mode(
+            netuid,
+            <T as Config>::WeightInfo::set_weights(),
+            <T as Config>::WeightInfo::set_mechanism_weights_null(uids),
+        )
+    }
+
+    pub fn set_mechanism_weights_weight(netuid: NetUid, uids: u32) -> Weight {
+        Self::timelock_weight_for_mode(
+            netuid,
+            <T as Config>::WeightInfo::set_mechanism_weights(uids),
+            <T as Config>::WeightInfo::set_mechanism_weights_null(uids),
+        )
+    }
+
+    pub fn batch_set_weights_weight(
+        netuids: &[Compact<NetUid>],
+        weights: &[Vec<(Compact<u16>, Compact<u16>)>],
+    ) -> Weight {
+        weights.iter().enumerate().fold(
             <T as Config>::WeightInfo::batch_set_weights(),
-            |acc, item| {
-                acc.saturating_add(<T as Config>::WeightInfo::set_mechanism_weights(
-                    item.len() as u32
+            |acc, (index, item)| {
+                let netuid = netuids
+                    .get(index)
+                    .map(|netuid| netuid.0)
+                    .unwrap_or(NetUid::ROOT);
+                acc.saturating_add(Self::set_mechanism_weights_weight(
+                    netuid,
+                    item.len() as u32,
                 ))
             },
         )
@@ -49,17 +73,29 @@ impl<T: Config> Pallet<T> {
 
     /// Pre-dispatch weight of `reveal_weights`, sized by the number of revealed uids (the
     /// same work as `reveal_mechanism_weights` on the main mechanism).
-    pub fn reveal_weights_weight(uids: u32) -> Weight {
-        <T as Config>::WeightInfo::reveal_weights()
-            .max(<T as Config>::WeightInfo::reveal_mechanism_weights(uids))
+    pub fn reveal_weights_weight(netuid: NetUid, uids: u32) -> Weight {
+        Self::timelock_weight_for_mode(
+            netuid,
+            <T as Config>::WeightInfo::reveal_weights()
+                .max(<T as Config>::WeightInfo::reveal_mechanism_weights(uids)),
+            <T as Config>::WeightInfo::reveal_mechanism_weights_null(uids),
+        )
+    }
+
+    pub fn reveal_mechanism_weights_weight(netuid: NetUid, uids: u32) -> Weight {
+        Self::timelock_weight_for_mode(
+            netuid,
+            <T as Config>::WeightInfo::reveal_mechanism_weights(uids),
+            <T as Config>::WeightInfo::reveal_mechanism_weights_null(uids),
+        )
     }
 
     /// Pre-dispatch weight of `batch_reveal_weights`: the batch overhead plus one reveal unit
     /// per item, sized by that item's uid count.
-    pub fn batch_reveal_weights_weight(uids_list: &[Vec<u16>]) -> Weight {
+    pub fn batch_reveal_weights_weight(netuid: NetUid, uids_list: &[Vec<u16>]) -> Weight {
         uids_list.iter().fold(
             <T as Config>::WeightInfo::batch_reveal_weights(),
-            |acc, uids| acc.saturating_add(Self::reveal_weights_weight(uids.len() as u32)),
+            |acc, uids| acc.saturating_add(Self::reveal_weights_weight(netuid, uids.len() as u32)),
         )
     }
 
@@ -476,7 +512,7 @@ impl<T: Config> Pallet<T> {
 
     /// Keep one pending row per hotkey/mechanism and preempt lower-priority
     /// rows under pressure. The current winning validator can always admit
-    /// one full row per mechanism: its combined payload is at most 128 KiB.
+    /// one full row per mechanism: its combined payload is at most 32 KiB.
     /// Stage every change before writing, so rejection leaves queues intact.
     fn enqueue_null_timelock(
         who: &T::AccountId,

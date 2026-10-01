@@ -413,7 +413,7 @@ _NAME_HELP_OVERRIDES: dict[str, str] = {
         "`btcli hparams get --netuid N`"
     ),
     "CommitPayloadTooLarge": (
-        "ciphertext exceeds the subnet consensus limit (floor(128 KiB / mechanism_count) "
+        "ciphertext exceeds the subnet consensus limit (floor(32 KiB / mechanism_count) "
         "for Null, 5,000 bytes for "
         "Yuma); reduce the row or check epoch_consensus"
     ),

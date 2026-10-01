@@ -7,6 +7,12 @@ sessions in this repo.
 **Source of truth for status:** `gh pr checks`, not `gh run list`.
 `gh run list` misses required checks that are not GitHub Actions jobs.
 
+**CI repair note, 2026-09-30:** CI was already red during the Null consensus
+release work (PR #3206). Compare failed checks with their base-branch logs and
+tested SHAs before choosing a fix. Existing failures, regressions, and transient
+infrastructure problems need different remedies, but none is a reason to
+ignore a failed release check.
+
 Always finish a local pass with:
 
 ```bash
@@ -21,14 +27,18 @@ creates commits.
 
 ## 1. The 10-minute loop
 
-Do this in order. Stop when the remaining red jobs are slow or infra.
+Do this in order. Fix failures as they appear and keep watching the remaining
+jobs, including slow checks and infrastructure retries, until CI is green.
 
 1. Confirm GitHub is testing the commit you think it is.
    Local fmt/clippy that you did not push does not count.
 2. Run `scripts/preflight.sh` (see §3). It scopes itself to the
    files you changed and stops at the cheap failures first.
-3. Push those fixes as one commit.
-4. Watch with fail-fast. Fix the next cheap failure. Repeat.
+3. Push the validated fix immediately after local preflight passes; do not
+   wait for the rest of the remote suite to finish.
+4. Watch with fail-fast. When any check fails, inspect its logs and begin the
+   fix immediately while other jobs continue. Restart the watcher after each
+   push and repeat until the complete check set is green.
 5. Rerun only when the log is infra (429, GHCR pull/push, warp-proof,
    cancelled sibling).
 6. Do not push again just to "unstick" CI. A new push cancels
@@ -50,11 +60,10 @@ gh run view <run-id> --log-failed
 or still running. Re-read the full check set after every push. The set
 can change.
 
-`gh pr checks` is tab-separated. Names have spaces. To list real
-failures and hide a waived skeptic:
+`gh pr checks` is tab-separated. Names have spaces. To list all failures:
 
 ```bash
-gh pr checks <N> | awk -F'\t' '$2=="fail" && $1!="skeptic"'
+gh pr checks <N> | awk -F'\t' '$2=="fail"'
 ```
 
 ---

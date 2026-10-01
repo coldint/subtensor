@@ -333,9 +333,9 @@
         "container": "SubnetInfoRuntimeApi",
         "name": "get_next_epoch_start_block",
         "path": "pallets/subtensor/src/coinbase/run_coinbase.rs",
-        "line": 1251,
-        "end_line": 1265,
-        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1251-L1265",
+        "line": 1272,
+        "end_line": 1286,
+        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1272-L1286",
         "raw_url": "/code/raw/pallets/subtensor/src/coinbase/run_coinbase.rs"
       }
     ]
@@ -881,9 +881,9 @@
         "container": "SubnetInfoRuntimeApi",
         "name": "get_next_epoch_start_block",
         "path": "pallets/subtensor/src/coinbase/run_coinbase.rs",
-        "line": 1251,
-        "end_line": 1265,
-        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1251-L1265",
+        "line": 1272,
+        "end_line": 1286,
+        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1272-L1286",
         "raw_url": "/code/raw/pallets/subtensor/src/coinbase/run_coinbase.rs"
       }
     ]
@@ -1510,9 +1510,9 @@
         "container": "SubnetInfoRuntimeApi",
         "name": "get_next_epoch_start_block",
         "path": "pallets/subtensor/src/coinbase/run_coinbase.rs",
-        "line": 1251,
-        "end_line": 1265,
-        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1251-L1265",
+        "line": 1272,
+        "end_line": 1286,
+        "url": "/code/pallets/subtensor/src/coinbase/run_coinbase.rs#L1272-L1286",
         "raw_url": "/code/raw/pallets/subtensor/src/coinbase/run_coinbase.rs"
       }
     ]

@@ -1283,7 +1283,7 @@
     },
     "CommitPayloadTooLarge": {
       "code": "limit_exceeded",
-      "description": "The encrypted weight commit exceeds the subnet's consensus payload limit. Yuma accepts at most 5,000 bytes; Null accepts at most floor(128 KiB / mechanism_count). Reduce the submitted weight row or check the subnet's epoch_consensus setting.",
+      "description": "The encrypted weight commit exceeds the subnet's consensus payload limit. Yuma accepts at most 5,000 bytes; Null accepts at most floor(32 KiB / mechanism_count). Reduce the submitted weight row or check the subnet's epoch_consensus setting.",
       "docs_url": "/docs/errors/chain/CommitPayloadTooLarge",
       "markdown_url": "/llms.mdx/docs/errors/chain/CommitPayloadTooLarge/content.md",
       "pallets": [
@@ -1301,7 +1301,7 @@
     },
     "CommitQueueFull": {
       "code": "limit_exceeded",
-      "description": "The subnet's Null timelock queue has reached its shared per-epoch limit of 256 KiB or 64 commits across emission mechanisms. Wait for the next epoch before submitting another commit; the leading eligible validator can preempt lower-priority rows.",
+      "description": "The subnet's Null timelock queue has reached its shared per-epoch limit of 64 KiB or 64 commits across emission mechanisms. Wait for the next epoch before submitting another commit; the leading eligible validator can preempt lower-priority rows.",
       "docs_url": "/docs/errors/chain/CommitQueueFull",
       "markdown_url": "/llms.mdx/docs/errors/chain/CommitQueueFull/content.md",
       "pallets": [

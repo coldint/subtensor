@@ -13,6 +13,8 @@
     "sudo_set_epoch_consensus",
     "sudo_set_mechanism_count",
     "dissolve_network",
-    "root_dissolve_network"
+    "root_dissolve_network",
+    "set_mechanism_weights_null",
+    "reveal_mechanism_weights_null"
   ]
 }

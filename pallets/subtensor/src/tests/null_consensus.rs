@@ -215,8 +215,8 @@ fn null_consensus_default_and_empty_subnet() {
 #[test]
 fn null_apportionment_conserves_large_and_subatomic_budgets() {
     use crate::epoch::run_epoch::apportion_units;
-    for budget in [0, 1, 7, 16_001, 1_000_003, u64::MAX] {
-        let mut shares = vec![u128::from(u16::MAX); 16_000];
+    for budget in [0, 1, 7, 4_097, 1_000_003, u64::MAX] {
+        let mut shares = vec![u128::from(u16::MAX); 4_096];
         shares[0] = 1;
         shares[100] = 0;
         let payouts = apportion_units(&shares, budget);
@@ -231,7 +231,7 @@ fn null_apportionment_conserves_large_and_subatomic_budgets() {
         }
     }
     assert_eq!(
-        apportion_units(&[u128::MAX; 16_000], u64::MAX)
+        apportion_units(&[u128::MAX; 4_096], u64::MAX)
             .iter()
             .map(|p| u128::from(u64::from(*p)))
             .sum::<u128>(),
@@ -290,23 +290,23 @@ fn null_consensus_full_row_timelock_reveal_to_emissions() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
         let index = NetUidStorageIndex::from(netuid);
-        // Populate the registered-UID fixtures without 16,000 independent
+        // Populate the registered-UID fixtures without 4,096 independent
         // extrinsic transactions. Submission and reveal use production paths.
-        SubtensorModule::set_max_allowed_uids(netuid, 16_000);
-        for uid in 4..16_000u16 {
+        SubtensorModule::set_max_allowed_uids(netuid, 4_096);
+        for uid in 4..4_096u16 {
             Keys::<Test>::insert(netuid, uid, U256::from(uid));
             Uids::<Test>::insert(netuid, U256::from(uid), uid);
         }
-        SubnetworkN::<Test>::insert(netuid, 16_000);
-        let mut permits = vec![false; 16_000]; permits[0] = true; permits[1] = true;
+        SubnetworkN::<Test>::insert(netuid, 4_096);
+        let mut permits = vec![false; 4_096]; permits[0] = true; permits[1] = true;
         ValidatorPermit::<Test>::insert(netuid, permits);
-        LastUpdate::<Test>::insert(index, vec![0u64; 16_000]);
+        LastUpdate::<Test>::insert(index, vec![0u64; 4_096]);
         SubtensorModule::set_commit_reveal_weights_enabled(netuid, true);
         assert_ok!(SubtensorModule::set_reveal_period(netuid, 1));
         let round = 1_000u64;
-        let mut values = vec![1u16; 16_000]; values[2] = 65_534;
+        let mut values = vec![1u16; 4_096]; values[2] = 65_534;
         let payload = WeightsTlockPayload { hotkey: U256::from(0).encode(),
-            uids: (0..16_000u16).collect(), values: values.clone(), version_key: 0 };
+            uids: (0..4_096u16).collect(), values: values.clone(), version_key: 0 };
         let pk_bytes = hex::decode("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a").unwrap();
         let pk = <TinyBLS381 as EngineBLS>::PublicKeyGroup::deserialize_compressed(&*pk_bytes).unwrap();
         let identity = Identity::new(b"", vec![sha2::Sha256::digest(round.to_be_bytes()).to_vec()]);
@@ -324,11 +324,11 @@ fn null_consensus_full_row_timelock_reveal_to_emissions() {
         SubnetEpochIndex::<Test>::insert(netuid, committed_epoch + 1);
         assert_ok!(SubtensorModule::reveal_crv3_commits_for_subnet(netuid));
         let stored = Weights::<Test>::get(index, 0);
-        assert_eq!(stored.len(), 16_000);
+        assert_eq!(stored.len(), 4_096);
         assert_eq!(stored.iter().map(|(_, weight)| *weight).collect::<Vec<_>>(), values);
         let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000_001.into());
-        assert_eq!(output.as_map().len(), 16_000);
-        assert!(output.as_map().values().filter(|t| t.server_emission > 0.into()).count() > 15_000);
+        assert_eq!(output.as_map().len(), 4_096);
+        assert!(output.as_map().values().filter(|t| t.server_emission > 0.into()).count() > 4_000);
         let miners: u128 = output.as_map().values().map(|t| u128::from(u64::from(t.server_emission))).sum();
         let validators: u128 = output.as_map().values().map(|t| u128::from(u64::from(t.validator_emission))).sum();
         assert_eq!(miners, 500_001); assert_eq!(miners + validators, 1_000_001);

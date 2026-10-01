@@ -11,8 +11,8 @@ from bittensor.result import BittensorError
 
 
 def test_raw_full_row_preserves_small_weights():
-    uids = list(range(16_000))
-    values = [65_534] + [1] * 15_999
+    uids = list(range(4_096))
+    values = [65_534] + [1] * 4_095
     assert _conform(uids, values, _Preflight(0, False, 1, 65_535), 1, True) == (uids, values)
 
 
@@ -39,7 +39,7 @@ async def test_raw_requires_null_consensus():
 
 
 def test_cli_full_row_file(tmp_path):
-    data = {str(uid): 1 for uid in range(16_000)}
+    data = {str(uid): 1 for uid in range(4_096)}
     data["0"] = 65_534
     path = tmp_path / "weights.json"
     path.write_text(json.dumps(data))
@@ -70,22 +70,22 @@ async def test_full_row_intent_composes_exact_values(monkeypatch, commit_reveal)
     substrate = FakeSubstrate()
     substrate.seed_default("SubtensorModule", "SubnetEpochConsensus", "Null")
     substrate.seed_default("SubtensorModule", "CommitRevealWeightsEnabled", commit_reveal)
-    values = [65_534] + [1] * 15_999
+    values = [65_534] + [1] * 4_095
     encrypted = []
 
     def encrypt(**kwargs):
         encrypted.append(kwargs)
-        return bytes(64_512), 1_000
+        return bytes(17_000), 1_000
 
     monkeypatch.setattr("bittensor.intents.weights._core.get_encrypted_commit_v2", encrypt)
-    built = await SetWeights(
-        netuid=1, uids=list(range(16_000)), weights=values, raw_u16=True
-    ).build(substrate, dev_wallet())
+    built = await SetWeights(netuid=1, uids=list(range(4_096)), weights=values, raw_u16=True).build(
+        substrate, dev_wallet()
+    )
     if commit_reveal:
         assert encrypted[0]["weights"] == values
-        assert encrypted[0]["uids"] == list(range(16_000))
+        assert encrypted[0]["uids"] == list(range(4_096))
         assert built.call.function == "commit_timelocked_mechanism_weights"
-        assert len(built.call.params["commit"]) == 64_512
+        assert len(built.call.params["commit"]) == 17_000
     else:
         assert built.function == "set_mechanism_weights"
         assert built.params["weights"] == values

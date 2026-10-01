@@ -36,6 +36,21 @@ SDK bindings drift from a node built from this tree, ruff, `codegen.check`,
 mainnet snapshot when migrations changed, `git diff --check`, untracked
 generated files, and the push actor. `ci_tips.md` explains each failure.
 
+## CI repair loop (2026-09-30)
+
+CI was already red during the Null consensus release work (PR #3206). Treat
+every failing check as something to diagnose: compare its tested SHA and logs
+with the base branch to distinguish existing failures, regressions, and
+infrastructure failures. An existing failure still needs resolution; do not
+waive it or call the release ready because it predates the change.
+
+Watch checks continuously with fail-fast. As soon as any check fails, read its
+logs and start fixing the cause while other jobs continue. Once the fix is
+validated and the mandatory local preflight passes, commit and push immediately;
+do not wait for the entire remote suite to finish. Restart the watcher for the
+new SHA and repeat until the complete check set is green. The prohibition on
+no-op pushes and bypassing the pre-push hook still applies.
+
 ## Fixing a red gate
 
 Before any command that can rewrite files, inspect `git status --short` and

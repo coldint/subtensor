@@ -313,7 +313,7 @@ HYPERPARAMS: dict[str, Hyperparam] = {
         "int",
         "Maximum neuron slots (UIDs) on the subnet; registrations beyond this "
         "prune the lowest-scoring neuron. Capacity shares a budget of 256 under Yuma "
-        "or 16000 under Null across emission mechanisms.",
+        "or 4096 under Null across emission mechanisms.",
         short="neuron slot capacity before pruning",
     ),
     "burn_increase_mult": Hyperparam(

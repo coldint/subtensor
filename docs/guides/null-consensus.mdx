@@ -34,10 +34,10 @@ fractions remain quantized and do not feed back into actual reward amounts.
 
 ```bash
 btcli hparams set --netuid 1 --name epoch_consensus --value Null
-btcli hparams set --netuid 1 --name max_allowed_uids --value 16000
+btcli hparams set --netuid 1 --name max_allowed_uids --value 4096
 ```
 
-Capacity is `floor(16000 / mechanism_count)` for Null, and
+Capacity is `floor(4096 / mechanism_count)` for Null, and
 `floor(256 / mechanism_count)` for Yuma. Increasing the mechanism count also checks
 the configured capacity. Reduce capacity first if the shared limit would be exceeded.
 Switching to Null does not automatically increase capacity.
@@ -83,9 +83,9 @@ available and keeps its scaling and clipping behavior.
 
 `set` automatically selects plaintext or timelocked submission according to subnet
 configuration. Timelocked rows auto-reveal using drand; they need no manual reveal.
-Null allows ciphertexts up to `floor(128 KiB / mechanism_count)`, leaving room
+Null allows ciphertexts up to `floor(32 KiB / mechanism_count)`, leaving room
 above a full row at the corresponding UID ceiling. The shared queue per subnet
-epoch is bounded to 256 KiB and 64 commits across all mechanisms. Each hotkey can
+epoch is bounded to 64 KiB and 64 commits across all mechanisms. Each hotkey can
 have one pending row per mechanism; resubmitting replaces that row. When full,
 a higher-priority eligible validator can displace lower-priority rows. Priority
 uses stake with ties resolved by first UID; ineligible hotkeys rank last.
@@ -99,6 +99,9 @@ Null incentive and payout allocation is linear in registered UIDs. The existing
 shared sparse weight-loading and masking path still processes all submitted rows;
 a dense matrix therefore has quadratic data-processing cost. Null avoids the
 quadratic bond update and writes only the ordinary output vectors and payouts.
+When a Null epoch is due, the existing scheduler runs at most one epoch in that
+block. Remaining due subnets are deferred; blocks with only Yuma epochs retain
+the configured epoch cap. Payouts settle atomically in the epoch's block.
 
 ## Solidity callers
 
@@ -108,8 +111,8 @@ The setter dispatches with the mapped caller's signed origin and enforces the
 same owner, rate, window and population checks as the normal extrinsic.
 
 The Neuron precompile at `0x0804` adds `setMechanismWeightsV2` for rows up to
-16,000 entries and `commitTimelockedMechanismWeightsV2` for ciphertexts up to
-128 KiB. The runtime still applies the selected subnet mode's limits. The
+4,096 entries and `commitTimelockedMechanismWeightsV2` for ciphertexts up to
+32 KiB. The runtime still applies the selected subnet mode's limits. The
 released `setMechanismWeights` and timelocked selectors preserve their 4,096-entry
 and 5,000-byte input bounds. Existing selectors, types and addresses are unchanged.
 The SDK's vendored ABIs include the new functions.

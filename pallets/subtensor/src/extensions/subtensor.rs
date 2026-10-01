@@ -586,49 +586,52 @@ mod tests {
     // work they run instead of a constant.
     #[test]
     fn batched_weight_calls_declare_per_item_weight() {
-        let netuid = NetUid::from(1);
-        let one_item = |items: usize| {
-            RuntimeCall::SubtensorModule(SubtensorCall::batch_set_weights {
-                netuids: vec![codec::Compact(netuid); items],
-                weights: vec![vec![(codec::Compact(0_u16), codec::Compact(1_u16))]; items],
-                version_keys: vec![codec::Compact(0_u64); items],
-            })
-            .get_dispatch_info()
-            .call_weight
-        };
-        let per_item = <Test as crate::Config>::WeightInfo::set_mechanism_weights(1);
-        assert!(one_item(1).all_gte(per_item));
-        assert!(one_item(8).all_gte(one_item(1).saturating_add(per_item.saturating_mul(7))));
+        new_test_ext(0).execute_with(|| {
+            let netuid = NetUid::from(1);
+            let one_item = |items: usize| {
+                RuntimeCall::SubtensorModule(SubtensorCall::batch_set_weights {
+                    netuids: vec![codec::Compact(netuid); items],
+                    weights: vec![vec![(codec::Compact(0_u16), codec::Compact(1_u16))]; items],
+                    version_keys: vec![codec::Compact(0_u64); items],
+                })
+                .get_dispatch_info()
+                .call_weight
+            };
+            let per_item = <Test as crate::Config>::WeightInfo::set_mechanism_weights(1);
+            assert!(one_item(1).all_gte(per_item));
+            assert!(one_item(8).all_gte(one_item(1).saturating_add(per_item.saturating_mul(7))));
 
-        let commit_batch = |items: usize| {
-            RuntimeCall::SubtensorModule(SubtensorCall::batch_commit_weights {
-                netuids: vec![codec::Compact(netuid); items],
-                commit_hashes: vec![sp_core::H256::zero(); items],
-            })
-            .get_dispatch_info()
-            .call_weight
-        };
-        let per_commit = <Test as crate::Config>::WeightInfo::commit_weights();
-        assert!(
-            commit_batch(8).all_gte(commit_batch(1).saturating_add(per_commit.saturating_mul(7)))
-        );
+            let commit_batch = |items: usize| {
+                RuntimeCall::SubtensorModule(SubtensorCall::batch_commit_weights {
+                    netuids: vec![codec::Compact(netuid); items],
+                    commit_hashes: vec![sp_core::H256::zero(); items],
+                })
+                .get_dispatch_info()
+                .call_weight
+            };
+            let per_commit = <Test as crate::Config>::WeightInfo::commit_weights();
+            assert!(
+                commit_batch(8)
+                    .all_gte(commit_batch(1).saturating_add(per_commit.saturating_mul(7)))
+            );
 
-        let reveal = |uids: usize| {
-            RuntimeCall::SubtensorModule(SubtensorCall::reveal_weights {
-                netuid,
-                uids: vec![0; uids],
-                values: vec![1; uids],
-                salt: vec![1],
-                version_key: 0,
-            })
-            .get_dispatch_info()
-            .call_weight
-        };
-        assert!(
-            reveal(4096)
-                .all_gte(<Test as crate::Config>::WeightInfo::reveal_mechanism_weights(4096))
-        );
-        assert!(reveal(4096).all_gt(reveal(1)));
+            let reveal = |uids: usize| {
+                RuntimeCall::SubtensorModule(SubtensorCall::reveal_weights {
+                    netuid,
+                    uids: vec![0; uids],
+                    values: vec![1; uids],
+                    salt: vec![1],
+                    version_key: 0,
+                })
+                .get_dispatch_info()
+                .call_weight
+            };
+            assert!(
+                reveal(4096)
+                    .all_gte(<Test as crate::Config>::WeightInfo::reveal_mechanism_weights(4096))
+            );
+            assert!(reveal(4096).all_gt(reveal(1)));
+        });
     }
 
     #[test]

@@ -132,8 +132,12 @@ pub trait WeightInfo {
 	fn check_serving_endpoints_extension() -> Weight;
 	fn check_evm_key_association_extension() -> Weight;
 	fn set_mechanism_weights(n: u32, ) -> Weight;
+	/// Replaced by the matching reference measurement before release.
+	fn set_mechanism_weights_null(n: u32) -> Weight { Self::set_mechanism_weights(n) }
 	fn commit_mechanism_weights() -> Weight;
 	fn reveal_mechanism_weights(n: u32, ) -> Weight;
+	/// Replaced by the matching reference measurement before release.
+	fn reveal_mechanism_weights_null(n: u32) -> Weight { Self::reveal_mechanism_weights(n) }
 	fn commit_crv3_mechanism_weights() -> Weight;
 	fn commit_timelocked_mechanism_weights() -> Weight;
 	fn swap_hotkey_v2() -> Weight;

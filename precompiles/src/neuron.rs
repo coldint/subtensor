@@ -2045,8 +2045,8 @@ mod tests {
                 (
                     TEST_NETUID_U16,
                     0u8,
-                    dests.clone(),
-                    weights.clone(),
+                    vec![0u16; 4097],
+                    vec![1u16; 4097],
                     VERSION_KEY,
                 ),
             );
@@ -2125,7 +2125,7 @@ mod tests {
             );
             let target = addr_from_index(NeuronPrecompile::<Runtime>::INDEX);
             let precompiles = precompiles::<NeuronPrecompile<Runtime>>();
-            let payload = UnboundedBytes::from(vec![0u8; 64_512]);
+            let payload = UnboundedBytes::from(vec![0u8; 32_768]);
             let legacy = encode_with_selector(
                 selector_u32("commitTimelockedMechanismWeights(uint16,uint8,bytes,uint64,uint16)"),
                 (TEST_NETUID_U16, 0u8, payload.clone(), 1000u64, 4u16),
@@ -2153,7 +2153,7 @@ mod tests {
                 epoch,
             );
             assert_eq!(queue.len(), 1);
-            assert_eq!(queue.front().unwrap().2.len(), 64_512);
+            assert_eq!(queue.front().unwrap().2.len(), 32_768);
             // Exact released calldata continues to admit an ordinary 5,000-byte commit.
             precompiles
                 .prepare_test(

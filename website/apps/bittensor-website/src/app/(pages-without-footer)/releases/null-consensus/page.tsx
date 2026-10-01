@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: 'Null Consensus — Large Subnets and Exact Weight Ratios',
   description:
     'Opt-in Null consensus selects the highest-stake validator for miner rewards, pays ' +
-    'stake-proportional dividends, and supports a shared capacity of 16,000 UIDs.',
+    'stake-proportional dividends, and supports a shared capacity of 4,096 UIDs.',
   alternates: {canonical: '/releases/null-consensus'},
 };
 
@@ -39,8 +39,8 @@ export default function Page() {
         <section className={styles.section}>
           <h2 className={styles.subtitle}>Capacity and switching</h2>
           <p>
-            Null shares a 16,000-UID capacity budget across emission mechanisms: 16,000 with one
-            mechanism, 8,000 with two, and 4,000 with four. Switching to Null preserves current
+            Null shares a 4,096-UID capacity budget across emission mechanisms: 4,096 with one
+            mechanism, 2,048 with two, and 1,024 with four. Switching to Null preserves current
             capacity until the owner raises it. Returning to Yuma requires the registered population
             to fit its shared 256-UID budget; successful switching also clamps configured capacity.
             Pruning is an explicit owner action.
@@ -56,7 +56,7 @@ export default function Page() {
             exceed their epoch budget. Fractional entitlements are not carried to later epochs.
           </p>
           <p>
-            Null timelocked ciphertexts can be up to 128 KiB divided by the mechanism count,
+            Null timelocked ciphertexts can be up to 32 KiB divided by the mechanism count,
             leaving room above a full row at the corresponding UID ceiling. Queues share byte and
             count limits across mechanisms, replace a hotkey’s own pending row, and allow the
             leading eligible validator to displace lower-priority commits. Mode changes wait for
@@ -64,7 +64,7 @@ export default function Page() {
           </p>
           <pre className={styles.code_block}>{`# Subnet owner: switch, then raise capacity
 btcli hparams set --netuid 1 --name epoch_consensus --value Null
-btcli hparams set --netuid 1 --name max_allowed_uids --value 16000
+btcli hparams set --netuid 1 --name max_allowed_uids --value 4096
 
 # Validator: weights.json contains {"2": 65534, "3": 1, ...}
 btcli misc weights set --netuid 1 --raw-u16 --weights-file weights.json`}</pre>

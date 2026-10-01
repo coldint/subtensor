@@ -59,12 +59,12 @@ extern crate alloc;
 
 pub type OriginFor<T> = <T as frame_system::Config>::RuntimeOrigin;
 
-/// SCALE bound includes room for a full 16,000-entry encrypted weight row.
-pub const MAX_CRV3_COMMIT_SIZE_BYTES: u32 = 128 * 1024;
+/// SCALE bound includes room for a full 4,096-entry encrypted weight row.
+pub const MAX_CRV3_COMMIT_SIZE_BYTES: u32 = 32 * 1024;
 pub const YUMA_COMMIT_SIZE_BYTES: u32 = 5000;
 /// Bound ciphertext storage and decryption work per Null subnet epoch,
 /// shared across all emission mechanisms.
-pub const NULL_COMMIT_QUEUE_BYTES: usize = 256 * 1024;
+pub const NULL_COMMIT_QUEUE_BYTES: usize = 64 * 1024;
 pub const NULL_COMMIT_QUEUE_COUNT: usize = 64;
 
 pub const ALPHA_MAP_BATCH_SIZE: usize = 30;

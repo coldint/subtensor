@@ -29,7 +29,7 @@ use sp_std::collections::vec_deque::VecDeque;
 use sp_std::vec;
 use substrate_fixed::types::{I96F32, U64F64};
 use subtensor_runtime_common::{
-    AlphaBalance, AuthorshipInfo, NetUid, NetUidStorageIndex, TaoBalance,
+    AlphaBalance, AuthorshipInfo, MechId, NetUid, NetUidStorageIndex, TaoBalance,
 };
 use subtensor_swap_interface::SwapHandler;
 
@@ -783,6 +783,12 @@ mod pallet_benchmarks {
         {
             assert_ok!(Subtensor::<T>::block_step());
         }
+        let hotkey: T::AccountId = account("block_step_hot", 1, 128);
+        let coldkey: T::AccountId = account("block_step_cold", 1, 128);
+        assert!(
+            MinerCollateral::<T>::get((NetUid::from(1), hotkey, coldkey))
+                .is_some_and(|position| position.earned > AlphaBalance::ZERO)
+        );
     }
 
     #[benchmark]
@@ -2765,6 +2771,50 @@ mod pallet_benchmarks {
     }
 
     #[benchmark]
+    fn set_mechanism_weights_null(n: Linear<1, 4096>) {
+        let (netuid, hotkey, uids, values, _) = setup_null_weight_benchmark::<T>(n);
+        Subtensor::<T>::set_commit_reveal_weights_enabled(netuid, false);
+        #[extrinsic_call]
+        set_mechanism_weights(
+            RawOrigin::Signed(hotkey),
+            netuid,
+            MechId::MAIN,
+            uids,
+            values,
+            0,
+        );
+    }
+
+    #[benchmark]
+    fn reveal_mechanism_weights_null(n: Linear<1, 4096>) {
+        let (netuid, hotkey, uids, values, salt) = setup_null_weight_benchmark::<T>(n);
+        Subtensor::<T>::set_commit_reveal_weights_enabled(netuid, true);
+        let period = core::cmp::max(MIN_COMMIT_REVEAL_PEROIDS, 1_u64);
+        assert_ok!(Subtensor::<T>::set_reveal_period(netuid, period));
+        let index = NetUidStorageIndex::from(netuid);
+        let hash = Subtensor::<T>::get_commit_hash(&hotkey, index, &uids, &values, &salt, 0);
+        let mut queue = VecDeque::new();
+        for i in 1..=9u8 {
+            let dummy = H256::repeat_byte(i);
+            assert_ne!(dummy, hash);
+            queue.push_back((dummy, 0, 0, 0));
+        }
+        queue.push_back((hash, 0, 0, 0));
+        WeightCommits::<T>::insert(index, &hotkey, queue);
+        SubnetEpochIndex::<T>::insert(netuid, period);
+        #[extrinsic_call]
+        reveal_mechanism_weights(
+            RawOrigin::Signed(hotkey),
+            netuid,
+            MechId::MAIN,
+            uids,
+            values,
+            salt,
+            0,
+        );
+    }
+
+    #[benchmark]
     fn set_mechanism_weights(n: Linear<1, 4096>) {
         let mecid = subtensor_runtime_common::MechId::MAIN;
         let (netuid, hotkey, uids, weight_values, _salt, version_key) =
@@ -2988,6 +3038,14 @@ mod pallet_benchmarks {
             commit,
             u64::MAX,
         );
+        let queue = TimelockedWeightCommits::<T>::get(NetUidStorageIndex::from(netuid), 0);
+        assert_eq!(queue.len(), NULL_COMMIT_QUEUE_COUNT / 2 + 1);
+        assert!(
+            queue
+                .iter()
+                .any(|(account, _, ciphertext, _)| account == &hotkey
+                    && ciphertext.len() == MAX_CRV3_COMMIT_SIZE_BYTES as usize)
+        );
     }
 
     #[benchmark]
@@ -3008,6 +3066,14 @@ mod pallet_benchmarks {
             commit,
             u64::MAX,
             version,
+        );
+        let queue = TimelockedWeightCommits::<T>::get(NetUidStorageIndex::from(netuid), 0);
+        assert_eq!(queue.len(), NULL_COMMIT_QUEUE_COUNT / 2 + 1);
+        assert!(
+            queue
+                .iter()
+                .any(|(account, _, ciphertext, _)| account == &hotkey
+                    && ciphertext.len() == MAX_CRV3_COMMIT_SIZE_BYTES as usize)
         );
     }
 
@@ -3048,6 +3114,14 @@ mod pallet_benchmarks {
             commit.clone(),
             round,
             Subtensor::<T>::get_commit_reveal_weights_version(),
+        );
+        let queue = TimelockedWeightCommits::<T>::get(NetUidStorageIndex::from(netuid), 0);
+        assert_eq!(queue.len(), NULL_COMMIT_QUEUE_COUNT / 2 + 1);
+        assert!(
+            queue
+                .iter()
+                .any(|(account, _, ciphertext, _)| account == &hotkey
+                    && ciphertext.len() == MAX_CRV3_COMMIT_SIZE_BYTES as usize)
         );
     }
 

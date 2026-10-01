@@ -355,8 +355,23 @@ impl<T: Config> Pallet<T> {
 
     /// Subnets whose epoch slot is due *this* block but is deferred by the per-block
     /// cap (`MaxEpochsPerBlock`).
+    /// A large Null epoch settles in the same block, using one scheduler slot
+    /// for the block. Pure Yuma blocks retain the configured epoch cap.
+    fn epoch_cap_for_block(subnets: &[NetUid], current_block: u64) -> u32 {
+        let configured = u32::from(Self::get_max_epochs_per_block());
+        if subnets.iter().any(|netuid| {
+            !netuid.is_root()
+                && Self::get_epoch_consensus(*netuid) == EpochConsensus::Null
+                && Self::should_run_epoch(*netuid, current_block)
+        }) {
+            configured.min(1)
+        } else {
+            configured
+        }
+    }
+
     pub fn epochs_deferred_this_block(subnets: &[NetUid], current_block: u64) -> BTreeSet<NetUid> {
-        let cap = Self::get_max_epochs_per_block() as u32;
+        let cap = Self::epoch_cap_for_block(subnets, current_block);
         let mut deferred: BTreeSet<NetUid> = BTreeSet::new();
         let mut epochs_run_this_block: u32 = 0;
 
@@ -387,7 +402,7 @@ impl<T: Config> Pallet<T> {
         > = BTreeMap::new();
         // Per-block cap on number of epochs that may run; the rest are deferred 1 block forward
         // by setting `PendingEpochAt`.
-        let max_epochs_per_block = Self::get_max_epochs_per_block() as u32;
+        let max_epochs_per_block = Self::epoch_cap_for_block(subnets, current_block);
         let mut epochs_run_this_block: u32 = 0;
         for &netuid in subnets.iter() {
             // Keep the scheduler age bounded per subnet. `tempo + 1` is enough to
@@ -515,6 +530,7 @@ impl<T: Config> Pallet<T> {
         BTreeMap<T::AccountId, AlphaBalance>,
         BTreeMap<T::AccountId, U96F32>,
     ) {
+        let skip_zero_dividends = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
         // Accumulate emission of dividends and incentive per hotkey.
         let mut incentives: BTreeMap<T::AccountId, AlphaBalance> = BTreeMap::new();
         let mut dividends: BTreeMap<T::AccountId, U96F32> = BTreeMap::new();
@@ -524,6 +540,11 @@ impl<T: Config> Pallet<T> {
                 .entry(hotkey.clone())
                 .and_modify(|e| *e = e.saturating_add(incentive))
                 .or_insert(incentive);
+            // Null gives most UIDs no dividend. Avoid parent/take/collateral
+            // work and stake-snapshot writes for these zero-value recipients.
+            if skip_zero_dividends && dividend.is_zero() {
+                continue;
+            }
             // Accumulate dividends to parents.
             let div_tuples: Vec<(T::AccountId, AlphaBalance)> =
                 Self::get_parent_child_dividends_distribution(&hotkey, netuid, dividend);

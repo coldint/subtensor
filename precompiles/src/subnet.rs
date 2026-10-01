@@ -2288,20 +2288,20 @@ mod tests {
                     encode_with_selector(selector_u32("getNullConsensusLimits()"), ()),
                 )
                 .with_static_call(true)
-                .execute_returns((16_000u16, 131_072u32, 262_144u32, 64u32));
+                .execute_returns((4_096u16, 32_768u32, 65_536u32, 64u32));
             precompiles
                 .prepare_test(
                     caller,
                     target,
                     encode_with_selector(
                         selector_u32("setMaxAllowedUids(uint16,uint16)"),
-                        (TEST_NETUID_U16, 16_000u16),
+                        (TEST_NETUID_U16, 4_096u16),
                     ),
                 )
                 .execute_returns(());
             assert_eq!(
                 pallet_subtensor::Pallet::<Runtime>::get_max_allowed_uids(netuid),
-                16_000
+                4_096
             );
             let invalid = execute_precompile(
                 &precompiles,
