@@ -24,15 +24,15 @@ export default function Page() {
           <h2 className={styles.subtitle}>What changes</h2>
           <p>
             Subnet owners can opt into a second epoch mechanism. Null consensus takes miner
-            incentives from the permitted validator with the highest eligible stake. Ties select the
-            first UID. Other validators retain stake-proportional dividends, including inactive
-            validators, while their weights do not affect incentives. When the selected row has no
+            incentives from the highest-stake UID, which holds the sole validator permit. Ties select the
+            first UID. Only that permit holder may submit or commit weights. All staked UIDs retain
+            proportional dividends, including inactive UIDs and those without permits. When the selected row has no
             valid weights, every registered UID shares the miner budget equally. Yuma remains the
             default for existing and new subnets.
           </p>
           <p>
             Null skips consensus and bond calculations and leaves bond storage unchanged. The epoch
-            and payout interfaces remain compatible. Existing stake thresholds, permits,
+            and payout interfaces remain compatible. Existing submission stake thresholds,
             stale-destination checks and commit-reveal protections still apply.
           </p>
         </section>

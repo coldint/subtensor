@@ -159,6 +159,17 @@ impl<T: Config> Pallet<T> {
         {
             LastYumaStepBlock::<T>::insert(netuid, LastMechansimStepBlock::<T>::get(netuid));
         }
+        if mode == EpochConsensus::Null {
+            Self::set_max_allowed_validators(netuid, 1);
+            let (stakes, _, _) = Self::get_stake_weights_for_network(netuid);
+            let winner = Self::null_validator_winner(&stakes);
+            ValidatorPermit::<T>::insert(
+                netuid,
+                (0..stakes.len())
+                    .map(|uid| Some(uid) == winner)
+                    .collect::<Vec<_>>(),
+            );
+        }
         Self::set_epoch_consensus(netuid, mode);
         Ok(())
     }

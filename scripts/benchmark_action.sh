@@ -169,8 +169,14 @@ done
 
 echo ""; printf '%s\n' "${SUMMARY[@]}"
 
-(( FAILED )) && { printf '%s\n' "${SUMMARY[@]}" > "$PATCH_DIR/summary.txt"; exit 1; }
-(( ${#PATCHED[@]} == 0 )) && { echo "All weights within tolerance."; exit 0; }
+# Preserve successful reference measurements even if another pallet fails.
+# The run remains red; a partial patch is evidence, not a passing gate.
+if (( ${#PATCHED[@]} == 0 )); then
+  printf '%s\n' "${SUMMARY[@]}" > "$PATCH_DIR/summary.txt"
+  (( FAILED )) && exit 1
+  echo "All weights within tolerance."
+  exit 0
+fi
 
 # Prepare patch
 cd "$ROOT_DIR"
@@ -178,5 +184,9 @@ git add "${PATCHED[@]}"
 { echo "Head SHA: $(git rev-parse HEAD)"; echo ""; printf '%s\n' "${SUMMARY[@]}"; echo ""; git diff --cached --stat; } > "$PATCH_DIR/summary.txt"
 git diff --cached --binary > "$PATCH_DIR/benchmark_patch.diff"
 git reset HEAD -- "${PATCHED[@]}" >/dev/null 2>&1 || true
+if (( FAILED )); then
+  echo "Partial reference patch saved at $PATCH_DIR/benchmark_patch.diff; failed pallets remain unmeasured."
+  exit 1
+fi
 echo "Patch ready at $PATCH_DIR/benchmark_patch.diff — add 'apply-benchmark-patch' label to apply."
 exit 2

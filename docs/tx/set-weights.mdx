@@ -15,8 +15,9 @@ signing it preflights registration and the rate limit, so those failures
 are caught fast with the same error the chain would return; the rate-limit
 error says how many blocks to wait. The chain additionally enforces checks
 that are not preflighted: the hotkey must hold the minimum stake to set
-weights, must hold a validator permit to set non-self weights (the subnet
-owner is exempt), and `version_key` must not be older than the subnet's
+weights and a validator permit. Null has one permit holder, the highest-stake
+UID; self weights and subnet ownership do not bypass that permit. Yuma retains
+its owner and self-weight exceptions. `version_key` must not be older than the subnet's
 required version. Prefer this over `commit_weights`/`reveal_weights`
 unless you specifically need to force one path.
 
@@ -97,7 +98,7 @@ pub fn set_mechanism_weights(
 }
 ```
 
-Delegates to [`get_commit_reveal_weights_enabled`](/code/pallets/subtensor/src/utils/misc.rs#L607), [`do_set_mechanism_weights`](/code/pallets/subtensor/src/subnets/weights.rs#L1172).
+Delegates to [`get_commit_reveal_weights_enabled`](/code/pallets/subtensor/src/utils/misc.rs#L607), [`do_set_mechanism_weights`](/code/pallets/subtensor/src/subnets/weights.rs#L1188).
 
 `SubtensorModule.commit_timelocked_mechanism_weights` — [`pallets/subtensor/src/macros/dispatches.rs#L2026`](/code/pallets/subtensor/src/macros/dispatches.rs#L2024-L2042):
 
@@ -123,6 +124,6 @@ pub fn commit_timelocked_mechanism_weights(
 }
 ```
 
-Delegates to [`do_commit_timelocked_mechanism_weights`](/code/pallets/subtensor/src/subnets/weights.rs#L349).
+Delegates to [`do_commit_timelocked_mechanism_weights`](/code/pallets/subtensor/src/subnets/weights.rs#L361).
 
 Every file is browsable under [/code](/code) exactly as built into the runtime, or as plain text under `/code/raw/<path>` (index: [`/code/index.json`](/code/index.json)).

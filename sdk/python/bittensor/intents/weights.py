@@ -157,20 +157,22 @@ async def _preflight(substrate, hotkey_ss58: str, netuid: int, mechid: int) -> _
     Raises a :class:`ChainError` carrying the same :class:`ErrorCode` the on-chain
     failure would map to, so callers branch identically whether the problem was
     caught client-side or on-chain. Other chain-side checks (minimum stake,
-    validator permit, version key) are not preflighted here.
+    Yuma validator permit, version key) are not preflighted here. Null's sole
+    validator permit is checked before signing.
     """
     current_block = await substrate.block_number()
     block_hash = await substrate.block_hash(current_block)
     # LastUpdate (like the weights themselves) is keyed by the mechanism storage
     # index; for mechid 0 that index equals the netuid.
     storage_index = mechid * GLOBAL_MAX_SUBNET_COUNT + netuid
-    uid_raw, cr_raw, rate_raw, last_raw, min_raw, max_raw = await asyncio.gather(
+    uid_raw, cr_raw, rate_raw, last_raw, min_raw, max_raw, mode = await asyncio.gather(
         substrate.query(*st.Uids, [netuid, hotkey_ss58], block_hash=block_hash),
         substrate.query(*st.CommitRevealWeightsEnabled, [netuid], block_hash=block_hash),
         substrate.query(*st.WeightsSetRateLimit, [netuid], block_hash=block_hash),
         substrate.query(*st.LastUpdate, [storage_index], block_hash=block_hash),
         substrate.query(*st.MinAllowedWeights, [netuid], block_hash=block_hash),
         substrate.query(*st.MaxWeightsLimit, [netuid], block_hash=block_hash),
+        substrate.query(*st.SubnetEpochConsensus, [netuid], block_hash=block_hash),
     )
 
     if uid_raw is None:
@@ -179,6 +181,13 @@ async def _preflight(substrate, hotkey_ss58: str, netuid: int, mechid: int) -> _
             code=ErrorCode.NOT_REGISTERED,
         )
     uid = int(uid_raw)
+    if mode == "Null" or mode == {"Null": None} or mode == 1:
+        permits = await substrate.query(*st.ValidatorPermit, [netuid], block_hash=block_hash)
+        if not isinstance(permits, (list, tuple)) or uid >= len(permits) or not permits[uid]:
+            raise ChainError(
+                f"Only the sole Null validator permit holder may set weights on netuid {netuid}.",
+                code=ErrorCode.NOT_AUTHORIZED,
+            )
 
     rate_limit = int(rate_raw or 0)
     if (
@@ -352,8 +361,9 @@ class SetWeights(Intent):
     are caught fast with the same error the chain would return; the rate-limit
     error says how many blocks to wait. The chain additionally enforces checks
     that are not preflighted: the hotkey must hold the minimum stake to set
-    weights, must hold a validator permit to set non-self weights (the subnet
-    owner is exempt), and ``version_key`` must not be older than the subnet's
+    weights and a validator permit. Null has one permit holder, the highest-stake
+    UID; self weights and subnet ownership do not bypass that permit. Yuma retains
+    its owner and self-weight exceptions. ``version_key`` must not be older than the subnet's
     required version. Prefer this over ``commit_weights``/``reveal_weights``
     unless you specifically need to force one path.
     """

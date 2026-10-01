@@ -14,6 +14,17 @@ use sp_std::{collections::btree_set::BTreeSet, collections::vec_deque::VecDeque,
 use subtensor_runtime_common::{MechId, NetUid, NetUidStorageIndex};
 
 impl<T: Config> Pallet<T> {
+    pub(crate) fn ensure_null_weight_permit(netuid: NetUid, who: &T::AccountId) -> DispatchResult {
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            let uid = Self::get_uid_for_net_and_hotkey(netuid, who)?;
+            ensure!(
+                Self::get_validator_permit_for_uid(netuid, uid),
+                Error::<T>::NeuronNoValidatorPermit
+            );
+        }
+        Ok(())
+    }
+
     /// Keep the released Yuma cost path, reserving a separate envelope for Null.
     pub fn timelock_weight_for_mode(netuid: NetUid, yuma: Weight, null: Weight) -> Weight {
         let weight = if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
@@ -150,6 +161,7 @@ impl<T: Config> Pallet<T> {
 
         // 1. Verify the caller's signature (hotkey).
         let who = ensure_signed(origin)?;
+        Self::ensure_null_weight_permit(netuid, &who)?;
 
         log::debug!("do_commit_weights(hotkey: {who:?}, netuid: {netuid:?})");
 
@@ -380,6 +392,7 @@ impl<T: Config> Pallet<T> {
 
         // 1. Verify the caller's signature (hotkey).
         let who = ensure_signed(origin)?;
+        Self::ensure_null_weight_permit(netuid, &who)?;
 
         log::debug!("do_commit_v3_weights(hotkey: {who:?}, netuid: {netuid:?})");
 
@@ -681,6 +694,7 @@ impl<T: Config> Pallet<T> {
 
         // --- 1. Check the caller's signature (hotkey).
         let who = ensure_signed(origin.clone())?;
+        Self::ensure_null_weight_permit(netuid, &who)?;
 
         log::debug!("do_reveal_weights( hotkey:{who:?} netuid:{netuid:?})");
 
@@ -832,6 +846,7 @@ impl<T: Config> Pallet<T> {
 
         // --- 2. Check the caller's signature (hotkey).
         let who = ensure_signed(origin.clone())?;
+        Self::ensure_null_weight_permit(netuid, &who)?;
 
         log::debug!("do_batch_reveal_weights( hotkey:{who:?} netuid:{netuid:?})");
 
@@ -966,6 +981,7 @@ impl<T: Config> Pallet<T> {
 
         // --- 1. Check the caller's signature. This is the hotkey of a registered account.
         let hotkey = ensure_signed(origin)?;
+        Self::ensure_null_weight_permit(netuid, &hotkey)?;
         log::debug!(
             "do_set_weights( origin:{hotkey:?} netuid:{netuid:?}, uids:{uids:?}, values:{values:?})"
         );
@@ -1332,6 +1348,9 @@ impl<T: Config> Pallet<T> {
 
     /// Returns True if setting self-weight or has validator permit.
     pub fn check_validator_permit(netuid: NetUid, uid: u16, uids: &[u16], weights: &[u16]) -> bool {
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            return Self::get_validator_permit_for_uid(netuid, uid);
+        }
         // Check self weight. Allowed to set single value for self weight.
         if Self::is_self_weight(uid, uids, weights) {
             return true;

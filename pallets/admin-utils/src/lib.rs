@@ -935,6 +935,12 @@ pub mod pallet {
                 Error::<T>::SubnetDoesNotExist
             );
             ensure!(
+                pallet_subtensor::Pallet::<T>::get_epoch_consensus(netuid)
+                    != pallet_subtensor::EpochConsensus::Null
+                    || max_allowed_validators == 1,
+                Error::<T>::InvalidValue
+            );
+            ensure!(
                 max_allowed_validators
                     <= pallet_subtensor::Pallet::<T>::get_max_allowed_uids(netuid),
                 Error::<T>::MaxValidatorsLargerThanMaxUIds

@@ -10,19 +10,21 @@ The root subnet keeps its separate basket/dividend mechanism and cannot select N
 
 ## Rewards
 
-The permitted validator with the highest eligible stake determines miner incentives.
-Equal stakes select the first validator in UID order. Other validators' rows have no
-influence on miner incentives. Normal permits and stake thresholds apply; inactivity
-does not remove eligible stake from Null dividends or winner selection.
+Null elects exactly one validator permit holder: the registered UID with the highest
+unrounded stake weight. Equal stakes select the first UID. Only this permit holder
+may submit weights, commit weights or reveal weights; owner and self-weight exceptions
+do not bypass this rule. Permits are recomputed at epochs and initialized when
+switching to Null. All positive staked UIDs receive proportional dividends even
+without a permit, including inactive UIDs.
 
 The winner's weights undergo the existing self-weight, registration and commit-reveal
 masks. Its remaining integer ratios determine miner rewards. An empty or all-zero
 valid row distributes miner rewards equally across **every registered UID**. Null
 skips consensus and bond calculations and does not write bond storage.
 
-With eligible validator stake, half the epoch budget goes to validator dividends,
-proportional to that stake. The miner budget receives the other half, including the
-extra atomic unit when the epoch budget is odd. With no eligible validator stake,
+With positive stake, half the epoch budget goes to validator dividends,
+proportional to all positive stake. The miner budget receives the other half, including the
+extra atomic unit when the epoch budget is odd. With no positive stake,
 the local server and validator budget goes to miners. Unassignable root rewards
 are recycled separately and are never added to that miner budget. Wide integer arithmetic allocates each budget in
 UID order using cumulative proportional shares. Each payout is the floor or ceiling
@@ -95,10 +97,13 @@ ciphertext limit. These limits include encryption and serialization overhead.
 
 ## Operational cost
 
-Null incentive and payout allocation is linear in registered UIDs. The existing
-shared sparse weight-loading and masking path still processes all submitted rows;
-a dense matrix therefore has quadratic data-processing cost. Null avoids the
-quadratic bond update and writes only the ordinary output vectors and payouts.
+Null incentive and payout allocation is linear in registered UIDs. The epoch
+loads only the elected validator's row, containing at most one entry per UID.
+Historical nonwinning rows are not read or decoded. Weight reads, masking and
+working memory therefore stay linear even if old dense rows remain in storage.
+Null skips quadratic bond updates and writes the ordinary output vectors and
+payouts. The shared interface still uses ordered account maps, so this does not
+claim that every operation in the surrounding epoch pipeline is strictly linear.
 When a Null epoch is due, the existing scheduler runs at most one epoch in that
 block. Remaining due subnets are deferred; blocks with only Yuma epochs retain
 the configured epoch cap. Payouts settle atomically in the epoch's block.

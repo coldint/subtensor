@@ -771,9 +771,18 @@ impl<T: Config> Pallet<T> {
         // == Validator permits ==
         // =======================
 
+        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
+        // Strict comparison preserves the first UID when stake ties.
+        let null_winner = if is_null {
+            Self::null_validator_winner(&total_stake)
+        } else {
+            None
+        };
+
         // Get current validator permits.
         let mut validator_permits: Vec<bool> = Self::get_validator_permit(netuid);
-        if let Some(owner_uid) = owner_uid
+        if !is_null
+            && let Some(owner_uid) = owner_uid
             && let Some(owner_permit) = validator_permits.get_mut(owner_uid as usize)
         {
             *owner_permit = true;
@@ -788,9 +797,15 @@ impl<T: Config> Pallet<T> {
         log::trace!("max_allowed_validators: {max_allowed_validators:?}");
 
         // Get new validator permits.
-        let mut new_validator_permits: Vec<bool> =
-            is_topk_nonzero(&stake, max_allowed_validators as usize);
-        if let Some(owner_uid) = owner_uid
+        let mut new_validator_permits: Vec<bool> = if is_null {
+            (0..n as usize)
+                .map(|uid| Some(uid) == null_winner)
+                .collect()
+        } else {
+            is_topk_nonzero(&stake, max_allowed_validators as usize)
+        };
+        if !is_null
+            && let Some(owner_uid) = owner_uid
             && let Some(owner_permit) = new_validator_permits.get_mut(owner_uid as usize)
         {
             *owner_permit = true;
@@ -817,12 +832,30 @@ impl<T: Config> Pallet<T> {
         // == Weights ==
         // =============
 
-        // Access network weights row unnormalized.
-        let mut weights: Vec<Vec<(u16, I32F32)>> = Self::get_weights_sparse(netuid_index);
+        // Null loads only the elected validator's row. Historical rows from
+        // Yuma or earlier permit holders cannot expand the epoch matrix.
+        let mut weights: Vec<Vec<(u16, I32F32)>> = if is_null {
+            let mut rows = vec![Vec::new(); n as usize];
+            if let Some(uid) = null_winner {
+                let row = Weights::<T>::get(netuid_index, uid as u16)
+                    .into_iter()
+                    .filter(|(target, _)| *target < n)
+                    .map(|(target, value)| (target, I32F32::from_num(value)))
+                    .collect();
+                if let Some(destination) = rows.get_mut(uid) {
+                    *destination = row;
+                }
+            }
+            rows
+        } else {
+            Self::get_weights_sparse(netuid_index)
+        };
         log::trace!("Weights: {:?}", &weights);
 
         // Mask weights that are not from permitted validators.
-        weights = mask_rows_sparse(&validator_forbids, &weights);
+        if !is_null {
+            weights = mask_rows_sparse(&validator_forbids, &weights);
+        }
         log::trace!("Weights (permit): {:?}", &weights);
 
         // Remove self-weight by masking diagonal; keep owner_uid self-weight.
@@ -890,9 +923,8 @@ impl<T: Config> Pallet<T> {
             );
         }
 
-        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
-        // Null retains the masked integer ratios for payouts. The shared weight
-        // getter and all registration/commit masks remain unchanged.
+        // Null retains the masked integer ratios for payouts. All registration,
+        // destination and commit masks remain shared with Yuma.
         if !is_null {
             inplace_row_normalize_sparse(&mut weights);
             log::trace!("Weights (mask+norm): {:?}", &weights);
@@ -904,12 +936,8 @@ impl<T: Config> Pallet<T> {
             // original stake precision for allocation, independent of reporting.
             let dividend_shares: Vec<u128> = total_stake
                 .iter()
-                .enumerate()
-                .map(|(uid, stake)| {
-                    if validator_forbids.get(uid).copied().unwrap_or(true)
-                        || (owner_uid != Some(uid as u16) && fixed64_to_u64(*stake) < min_stake)
-                        || *stake <= I64F64::from(0)
-                    {
+                .map(|stake| {
+                    if *stake <= I64F64::from(0) {
                         0
                     } else {
                         stake.to_bits() as u128
@@ -923,25 +951,8 @@ impl<T: Config> Pallet<T> {
             inplace_normalize_64(&mut dividend_report);
             let dividends = vec_fixed64_to_fixed32(dividend_report);
 
-            // Compare the original stake precision, and retain the first UID on ties.
-            let mut winner: Option<usize> = None;
-            for (uid, &raw_stake) in total_stake.iter().enumerate() {
-                if validator_forbids.get(uid).copied().unwrap_or(true)
-                    || (owner_uid != Some(uid as u16) && fixed64_to_u64(raw_stake) < min_stake)
-                    || raw_stake <= I64F64::from(0)
-                {
-                    continue;
-                }
-                if winner.is_none_or(|previous| {
-                    total_stake
-                        .get(previous)
-                        .is_some_and(|old| raw_stake > *old)
-                }) {
-                    winner = Some(uid);
-                }
-            }
             let mut incentive_shares = vec![0u128; n as usize];
-            if let Some(row) = winner.and_then(|uid| weights.get(uid)) {
+            if let Some(row) = null_winner.and_then(|uid| weights.get(uid)) {
                 for &(uid, weight) in row {
                     if let Some(value) = incentive_shares.get_mut(uid as usize) {
                         *value = u128::from(weight.saturating_to_num::<u16>());
@@ -1315,6 +1326,17 @@ impl<T: Config> Pallet<T> {
             })
             .collect();
         block_at_registration
+    }
+
+    /// Select the sole Null permit holder using unrounded stake and UID order.
+    pub(crate) fn null_validator_winner(stakes: &[I64F64]) -> Option<usize> {
+        let mut winner = None;
+        for (uid, stake) in stakes.iter().enumerate() {
+            if winner.is_none_or(|previous| stakes.get(previous).is_some_and(|old| stake > old)) {
+                winner = Some(uid);
+            }
+        }
+        winner
     }
 
     /// Output unnormalized sparse weights, input weights are assumed to be row max-upscaled in u16.

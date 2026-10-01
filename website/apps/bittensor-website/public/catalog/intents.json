@@ -3043,18 +3043,18 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_epoch_consensus",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1419,
-        "end_line": 1441,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1414-L1441",
+        "line": 1425,
+        "end_line": 1447,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1420-L1447",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_tempo",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1096,
-        "end_line": 1100,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1085-L1100",
+        "line": 1102,
+        "end_line": 1106,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1091-L1106",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3115,18 +3115,18 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_bonds_moving_average",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 958,
-        "end_line": 990,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L956-L990",
+        "line": 964,
+        "end_line": 996,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L962-L996",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_bonds_penalty",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 997,
-        "end_line": 1021,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L995-L1021",
+        "line": 1003,
+        "end_line": 1027,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1001-L1027",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3142,9 +3142,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_commit_reveal_weights_interval",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1493,
-        "end_line": 1520,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1491-L1520",
+        "line": 1499,
+        "end_line": 1526,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1497-L1526",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3160,36 +3160,36 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_increase_mult",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2332,
-        "end_line": 2370,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2330-L2370",
+        "line": 2338,
+        "end_line": 2376,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2336-L2376",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_half_life",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2290,
-        "end_line": 2326,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2288-L2326",
+        "line": 2296,
+        "end_line": 2332,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2294-L2332",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_lock_share",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2456,
-        "end_line": 2489,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2454-L2489",
+        "line": 2462,
+        "end_line": 2495,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2460-L2495",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_drain_ratio",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2499,
-        "end_line": 2538,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2497-L2538",
+        "line": 2505,
+        "end_line": 2544,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2503-L2544",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3223,54 +3223,54 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_alpha_sigmoid_steepness",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1747,
-        "end_line": 1779,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1745-L1779",
+        "line": 1753,
+        "end_line": 1785,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1751-L1785",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_min_childkey_take_per_subnet",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1264,
-        "end_line": 1296,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1262-L1296",
+        "line": 1270,
+        "end_line": 1302,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1268-L1302",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_immune_neuron_limit",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1933,
-        "end_line": 1951,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1931-L1951",
+        "line": 1939,
+        "end_line": 1957,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1937-L1957",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_alpha_values",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1365,
-        "end_line": 1388,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1363-L1388",
+        "line": 1371,
+        "end_line": 1394,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1369-L1394",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_commit_reveal_weights_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1303,
-        "end_line": 1328,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1301-L1328",
+        "line": 1309,
+        "end_line": 1334,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1307-L1334",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_liquid_alpha_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1341,
-        "end_line": 1360,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1339-L1360",
+        "line": 1347,
+        "end_line": 1366,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1345-L1366",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3286,45 +3286,45 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_yuma3_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1792,
-        "end_line": 1813,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1790-L1813",
+        "line": 1798,
+        "end_line": 1819,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1796-L1819",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_bonds_reset_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1826,
-        "end_line": 1847,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1824-L1847",
+        "line": 1832,
+        "end_line": 1853,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1830-L1853",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_toggle_transfer",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1585,
-        "end_line": 1605,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1583-L1605",
+        "line": 1591,
+        "end_line": 1611,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1589-L1611",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2376,
-        "end_line": 2394,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2374-L2394",
+        "line": 2382,
+        "end_line": 2400,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2380-L2400",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_auto_lock_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2400,
-        "end_line": 2418,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2398-L2418",
+        "line": 2406,
+        "end_line": 2424,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2404-L2424",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3435,9 +3435,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_mechanism_count",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 1994,
-        "end_line": 2014,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L1991-L2014",
+        "line": 2000,
+        "end_line": 2020,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L1997-L2020",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3693,9 +3693,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_subnet_emission_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2428,
-        "end_line": 2446,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2426-L2446",
+        "line": 2434,
+        "end_line": 2452,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2432-L2452",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3841,7 +3841,7 @@
   {
     "name": "set_weights",
     "summary": "Set validator weights, auto-selecting plaintext or commit-reveal.",
-    "description": "Set validator weights, auto-selecting plaintext or commit-reveal.\n\nThe one entry point validators need for scoring miners: it conforms the\nweights to the subnet's hyperparameters (max-weight clip, u16 quantization,\nminimum weight count) and submits via whichever path the subnet runs \u2014 a\nplain `set_weights` when commit-reveal is off, or a timelock-encrypted\ncommit (auto-revealed by the chain at the drand reveal round) when it is on.\nSigned by the hotkey, which must be registered on the subnet. Before\nsigning it preflights registration and the rate limit, so those failures\nare caught fast with the same error the chain would return; the rate-limit\nerror says how many blocks to wait. The chain additionally enforces checks\nthat are not preflighted: the hotkey must hold the minimum stake to set\nweights, must hold a validator permit to set non-self weights (the subnet\nowner is exempt), and `version_key` must not be older than the subnet's\nrequired version. Prefer this over `commit_weights`/`reveal_weights`\nunless you specifically need to force one path.",
+    "description": "Set validator weights, auto-selecting plaintext or commit-reveal.\n\nThe one entry point validators need for scoring miners: it conforms the\nweights to the subnet's hyperparameters (max-weight clip, u16 quantization,\nminimum weight count) and submits via whichever path the subnet runs \u2014 a\nplain `set_weights` when commit-reveal is off, or a timelock-encrypted\ncommit (auto-revealed by the chain at the drand reveal round) when it is on.\nSigned by the hotkey, which must be registered on the subnet. Before\nsigning it preflights registration and the rate limit, so those failures\nare caught fast with the same error the chain would return; the rate-limit\nerror says how many blocks to wait. The chain additionally enforces checks\nthat are not preflighted: the hotkey must hold the minimum stake to set\nweights and a validator permit. Null has one permit holder, the highest-stake\nUID; self weights and subnet ownership do not bypass that permit. Yuma retains\nits owner and self-weight exceptions. `version_key` must not be older than the subnet's\nrequired version. Prefer this over `commit_weights`/`reveal_weights`\nunless you specifically need to force one path.",
     "signer": "hotkey",
     "origin": "signed",
     "verify": null,
@@ -4689,9 +4689,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_trim_to_max_allowed_uids",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2048,
-        "end_line": 2068,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2046-L2068",
+        "line": 2054,
+        "end_line": 2074,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2052-L2074",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]

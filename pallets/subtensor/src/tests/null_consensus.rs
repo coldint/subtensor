@@ -26,7 +26,10 @@ fn setup(stakes: [u64; 2]) -> NetUid {
         }
     }
     System::set_block_number(1);
-    SubtensorModule::set_epoch_consensus(netuid, EpochConsensus::Null);
+    assert_ok!(SubtensorModule::do_set_epoch_consensus(
+        netuid,
+        EpochConsensus::Null
+    ));
     netuid
 }
 
@@ -40,12 +43,22 @@ fn set_weights(netuid: NetUid, uid: u16, destinations: Vec<u16>, weights: Vec<u1
     ));
 }
 
+// Simulate rows left by Yuma or a previous permit holder.
+fn seed_historical_weights(netuid: NetUid, uid: u16, destinations: Vec<u16>, weights: Vec<u16>) {
+    Weights::<Test>::insert(
+        NetUidStorageIndex::from(netuid),
+        uid,
+        destinations.into_iter().zip(weights).collect::<Vec<_>>(),
+    );
+    SubtensorModule::set_last_update_for_uid(NetUidStorageIndex::from(netuid), uid, 1);
+}
+
 #[test]
 fn null_consensus_winner_incentives_and_stake_dividends_ignore_activity() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
         set_weights(netuid, 0, vec![2, 3], vec![3, 1]);
-        set_weights(netuid, 1, vec![3], vec![u16::MAX]);
+        seed_historical_weights(netuid, 1, vec![3], vec![u16::MAX]);
         // Both validators become inactive; Null must still use their stake.
         System::set_block_number(
             SubtensorModule::get_activity_cutoff_blocks(netuid).saturating_add(2),
@@ -82,7 +95,7 @@ fn null_consensus_tie_selects_first_uid() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([100_000_000, 100_000_000]);
         set_weights(netuid, 0, vec![2], vec![u16::MAX]);
-        set_weights(netuid, 1, vec![3], vec![u16::MAX]);
+        seed_historical_weights(netuid, 1, vec![3], vec![u16::MAX]);
         let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000_000.into());
         assert!(
             output.as_map()[&U256::from(2)]
@@ -99,7 +112,7 @@ fn null_consensus_tie_selects_first_uid() {
 fn null_consensus_empty_winner_weights_share_across_every_uid() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
-        set_weights(netuid, 1, vec![3], vec![u16::MAX]);
+        seed_historical_weights(netuid, 1, vec![3], vec![u16::MAX]);
         // The loser's row must not substitute for the empty winner row.
         let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000_000.into());
         for terms in output.as_map().values() {
@@ -126,7 +139,7 @@ fn null_consensus_empty_winner_weights_share_across_every_uid() {
 fn null_consensus_selects_winner_before_normalized_stake_rounding() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([1_000_000_000, 1_000_000_001]);
-        set_weights(netuid, 0, vec![2], vec![u16::MAX]);
+        seed_historical_weights(netuid, 0, vec![2], vec![u16::MAX]);
         set_weights(netuid, 1, vec![3], vec![u16::MAX]);
         let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000_000.into());
         assert_eq!(output.as_map()[&U256::from(2)].server_emission.to_u64(), 0);
@@ -145,7 +158,7 @@ fn null_consensus_stale_winner_row_uses_equal_fallback() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
         set_weights(netuid, 0, vec![2], vec![u16::MAX]);
-        set_weights(netuid, 1, vec![3], vec![u16::MAX]);
+        seed_historical_weights(netuid, 1, vec![3], vec![u16::MAX]);
         // UID 2 was replaced after the winner submitted its weights.
         BlockAtRegistration::<Test>::insert(netuid, 2, 2u64);
         let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 1_000_000.into());
@@ -346,7 +359,7 @@ fn null_consensus_commit_queue_budget_is_shared_by_mechanisms() {
             MechId::from(2)
         ));
         let version = SubtensorModule::get_commit_reveal_weights_version();
-        for uid in 0..2u16 {
+        for uid in 0..1u16 {
             for mechanism in 0..2u8 {
                 assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
                     RuntimeOrigin::signed(U256::from(uid)),
@@ -369,7 +382,7 @@ fn null_consensus_commit_queue_budget_is_shared_by_mechanisms() {
                 1000,
                 version
             ),
-            Error::<Test>::CommitQueueFull
+            Error::<Test>::NeuronNoValidatorPermit
         );
     });
 }
@@ -415,12 +428,34 @@ fn null_timelock_winner_preempts_junk_and_replaces_own_row() {
                 version,
             )
         };
-        assert_ok!(submit(2u16, 2u8));
-        assert_ok!(submit(3u16, 3u8));
-        // Two junk rows fill the byte quota. Neither has a validator permit.
+        assert_noop!(submit(2u16, 2u8), Error::<Test>::NeuronNoValidatorPermit);
+        assert_noop!(submit(3u16, 3u8), Error::<Test>::NeuronNoValidatorPermit);
+        assert_noop!(submit(1u16, 1u8), Error::<Test>::NeuronNoValidatorPermit);
+        // Historical queued rows must not prevent the current winner's admission.
+        let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
+        TimelockedWeightCommits::<Test>::insert(
+            NetUidStorageIndex::from(netuid),
+            epoch,
+            std::collections::VecDeque::from([
+                (
+                    U256::from(2),
+                    1,
+                    vec![2; MAX_CRV3_COMMIT_SIZE_BYTES as usize]
+                        .try_into()
+                        .unwrap(),
+                    1000,
+                ),
+                (
+                    U256::from(3),
+                    1,
+                    vec![3; MAX_CRV3_COMMIT_SIZE_BYTES as usize]
+                        .try_into()
+                        .unwrap(),
+                    1000,
+                ),
+            ]),
+        );
         assert_ok!(submit(0u16, 0u8));
-        assert_ok!(submit(1u16, 1u8));
-        assert_noop!(submit(2u16, 2u8), Error::<Test>::CommitQueueFull);
         assert_ok!(submit(0u16, 9u8));
         let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
         let queue = TimelockedWeightCommits::<Test>::get(NetUidStorageIndex::from(netuid), epoch);
@@ -430,7 +465,7 @@ fn null_timelock_winner_preempts_junk_and_replaces_own_row() {
                 .iter()
                 .any(|(who, _, bytes, _)| *who == U256::from(0) && bytes.iter().all(|b| *b == 9))
         );
-        assert!(queue.iter().any(|(who, ..)| *who == U256::from(1)));
+        assert!(!queue.iter().any(|(who, ..)| *who == U256::from(1)));
         // A newly highest-stake permitted validator also gets admission.
         SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
             &U256::from(2),
@@ -438,7 +473,14 @@ fn null_timelock_winner_preempts_junk_and_replaces_own_row() {
             netuid,
             500_000_000u64.into(),
         );
-        SubtensorModule::set_validator_permit_for_uid(netuid, 2, true);
+        let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 0u64.into());
+        ValidatorPermit::<Test>::insert(
+            netuid,
+            (0..4)
+                .map(|uid| output.as_map()[&U256::from(uid)].new_validator_permit)
+                .collect::<Vec<_>>(),
+        );
+        assert_noop!(submit(0u16, 0u8), Error::<Test>::NeuronNoValidatorPermit);
         assert_ok!(submit(2u16, 2u8));
         let queue = TimelockedWeightCommits::<Test>::get(NetUidStorageIndex::from(netuid), epoch);
         assert!(queue.iter().any(|(who, ..)| *who == U256::from(2)));
@@ -467,16 +509,15 @@ fn null_timelock_equal_stake_first_uid_preempts_at_count_limit() {
             SubtensorModule::set_validator_permit_for_uid(netuid, uid, true);
         }
         let version = SubtensorModule::get_commit_reveal_weights_version();
-        for uid in 1..65u16 {
-            assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
-                RuntimeOrigin::signed(U256::from(uid)),
-                netuid,
-                MechId::MAIN,
-                vec![1u8].try_into().unwrap(),
-                1000,
-                version,
-            ));
-        }
+        ValidatorPermit::<Test>::insert(netuid, (0..65).map(|uid| uid == 0).collect::<Vec<_>>());
+        let epoch = SubtensorModule::current_epoch_with_lookahead(netuid);
+        TimelockedWeightCommits::<Test>::insert(
+            NetUidStorageIndex::from(netuid),
+            epoch,
+            (1..65u16)
+                .map(|uid| (U256::from(uid), 1, vec![1u8].try_into().unwrap(), 1000))
+                .collect::<std::collections::VecDeque<_>>(),
+        );
         assert_ok!(SubtensorModule::do_commit_timelocked_mechanism_weights(
             RuntimeOrigin::signed(U256::from(0)),
             netuid,
@@ -617,6 +658,7 @@ fn null_bond_cutoff_tracks_last_yuma_epoch_not_null_epochs() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
         SubtensorModule::set_epoch_consensus(netuid, EpochConsensus::Yuma);
+        LastYumaStepBlock::<Test>::remove(netuid);
         LastMechansimStepBlock::<Test>::insert(netuid, 10);
         assert_eq!(SubtensorModule::bond_cutoff_block(netuid, 20, 5), 11);
         assert_ok!(SubtensorModule::do_set_epoch_consensus(
@@ -663,7 +705,7 @@ fn null_replaced_miner_bonds_match_clean_baseline_after_return_to_yuma() {
                 LastMechansimStepBlock::<Test>::insert(netuid, 100);
                 System::set_block_number(110);
                 set_weights(netuid, 0, vec![2], vec![u16::MAX]);
-                set_weights(netuid, 1, vec![2], vec![u16::MAX]);
+                seed_historical_weights(netuid, 1, vec![2], vec![u16::MAX]);
                 assert_ok!(SubtensorModule::do_set_epoch_consensus(
                     netuid,
                     EpochConsensus::Yuma
@@ -736,5 +778,122 @@ fn null_multiple_mechanisms_cannot_multiply_miner_rounding_remainders() {
                 .sum::<u64>(),
             501
         );
+    });
+}
+
+#[test]
+fn null_single_permit_blocks_owner_self_weights_and_all_commit_paths() {
+    use frame_support::assert_noop;
+    use sp_core::H256;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([100_000_000, 300_000_000]);
+        SubnetOwnerHotkey::<Test>::insert(netuid, U256::from(0));
+        assert_eq!(SubtensorModule::get_max_allowed_validators(netuid), 1);
+        assert_eq!(
+            ValidatorPermit::<Test>::get(netuid),
+            vec![false, true, false, false]
+        );
+        assert_noop!(
+            SubtensorModule::set_weights(
+                RuntimeOrigin::signed(U256::from(0)),
+                netuid,
+                vec![0],
+                vec![1],
+                0
+            ),
+            Error::<Test>::NeuronNoValidatorPermit
+        );
+        assert_noop!(
+            SubtensorModule::set_weights(
+                RuntimeOrigin::signed(U256::from(0)),
+                netuid,
+                vec![2],
+                vec![1],
+                0
+            ),
+            Error::<Test>::NeuronNoValidatorPermit
+        );
+        SubtensorModule::set_commit_reveal_weights_enabled(netuid, true);
+        assert_noop!(
+            SubtensorModule::do_commit_weights(
+                RuntimeOrigin::signed(U256::from(0)),
+                netuid,
+                H256::zero()
+            ),
+            Error::<Test>::NeuronNoValidatorPermit
+        );
+        assert_noop!(
+            SubtensorModule::do_commit_timelocked_weights(
+                RuntimeOrigin::signed(U256::from(0)),
+                netuid,
+                vec![1].try_into().unwrap(),
+                1000,
+                SubtensorModule::get_commit_reveal_weights_version()
+            ),
+            Error::<Test>::NeuronNoValidatorPermit
+        );
+        assert_noop!(
+            SubtensorModule::do_reveal_weights(
+                RuntimeOrigin::signed(U256::from(0)),
+                netuid,
+                vec![2],
+                vec![1],
+                vec![1],
+                0
+            ),
+            Error::<Test>::NeuronNoValidatorPermit
+        );
+    });
+}
+
+#[test]
+fn null_election_replaces_permit_and_dividends_include_nonpermit_stake() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+            &U256::from(1),
+            &U256::from(1),
+            netuid,
+            300_000_000u64.into(),
+        );
+        let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 700u64.into());
+        assert!(!output.as_map()[&U256::from(0)].new_validator_permit);
+        assert!(output.as_map()[&U256::from(1)].new_validator_permit);
+        assert_eq!(
+            output
+                .as_map()
+                .values()
+                .filter(|term| term.new_validator_permit)
+                .count(),
+            1
+        );
+        assert_eq!(
+            output.as_map()[&U256::from(0)].validator_emission.to_u64(),
+            150
+        );
+        assert_eq!(
+            output.as_map()[&U256::from(1)].validator_emission.to_u64(),
+            200
+        );
+        SubtensorModule::persist_netuid_epoch_terms(netuid, output.as_map());
+        assert_eq!(
+            ValidatorPermit::<Test>::get(netuid),
+            vec![false, true, false, false]
+        );
+        set_weights(netuid, 1, vec![2, 3], vec![1, 1]);
+    });
+}
+
+#[test]
+fn null_invalid_historical_row_does_not_affect_rewards() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        set_weights(netuid, 0, vec![2], vec![1]);
+        // A malformed historical row must not influence the winning row or rewards.
+        let key = Weights::<Test>::hashed_key_for(NetUidStorageIndex::from(netuid), 1u16);
+        sp_io::storage::set(&key, &[255]);
+        let output = SubtensorModule::epoch_mechanism(netuid, MechId::MAIN, 100u64.into());
+        assert_eq!(output.as_map()[&U256::from(2)].server_emission.to_u64(), 50);
+        assert_eq!(sp_io::storage::get(&key).unwrap().as_ref(), &[255]);
     });
 }

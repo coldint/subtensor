@@ -69,6 +69,7 @@ async def test_full_row_intent_composes_exact_values(monkeypatch, commit_reveal)
 
     substrate = FakeSubstrate()
     substrate.seed_default("SubtensorModule", "SubnetEpochConsensus", "Null")
+    substrate.seed_default("SubtensorModule", "ValidatorPermit", [True])
     substrate.seed_default("SubtensorModule", "CommitRevealWeightsEnabled", commit_reveal)
     values = [65_534] + [1] * 4_095
     encrypted = []
@@ -89,3 +90,26 @@ async def test_full_row_intent_composes_exact_values(monkeypatch, commit_reveal)
     else:
         assert built.function == "set_mechanism_weights"
         assert built.params["weights"] == values
+
+
+@pytest.mark.asyncio
+async def test_null_nonpermit_rejected_before_composing_or_encrypting(monkeypatch):
+    from bittensor.intents import SetWeights
+    from bittensor.result import ChainError, ErrorCode
+    from tests.harness.fake_substrate import FakeSubstrate
+    from tests.harness.samples import dev_wallet
+
+    substrate = FakeSubstrate()
+    substrate.seed_default("SubtensorModule", "SubnetEpochConsensus", "Null")
+    substrate.seed_default("SubtensorModule", "ValidatorPermit", [False, True])
+    substrate.seed_default("SubtensorModule", "CommitRevealWeightsEnabled", True)
+
+    def unexpected_encrypt(**kwargs):
+        raise AssertionError("A nonpermit holder must be rejected before encryption")
+
+    monkeypatch.setattr(
+        "bittensor.intents.weights._core.get_encrypted_commit_v2", unexpected_encrypt
+    )
+    with pytest.raises(ChainError) as error:
+        await SetWeights(netuid=1, weights={0: 1}, raw_u16=True).build(substrate, dev_wallet())
+    assert error.value.code == ErrorCode.NOT_AUTHORIZED

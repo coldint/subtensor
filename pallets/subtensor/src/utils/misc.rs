@@ -723,6 +723,11 @@ impl<T: Config> Pallet<T> {
         MaxAllowedValidators::<T>::get(netuid)
     }
     pub fn set_max_allowed_validators(netuid: NetUid, max_allowed_validators: u16) {
+        let max_allowed_validators = if Self::get_epoch_consensus(netuid) == EpochConsensus::Null {
+            1
+        } else {
+            max_allowed_validators
+        };
         MaxAllowedValidators::<T>::insert(netuid, max_allowed_validators);
         Self::deposit_event(Event::MaxAllowedValidatorsSet(
             netuid,

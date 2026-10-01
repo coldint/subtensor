@@ -2119,10 +2119,10 @@ mod tests {
         new_test_ext().execute_with(|| {
             let caller = addr_from_index(0x3240);
             let (netuid, _) = setup_registered_caller(caller);
-            pallet_subtensor::Pallet::<Runtime>::set_epoch_consensus(
+            frame_support::assert_ok!(pallet_subtensor::Pallet::<Runtime>::do_set_epoch_consensus(
                 netuid,
                 pallet_subtensor::EpochConsensus::Null,
-            );
+            ));
             let target = addr_from_index(NeuronPrecompile::<Runtime>::INDEX);
             let precompiles = precompiles::<NeuronPrecompile<Runtime>>();
             let payload = UnboundedBytes::from(vec![0u8; 32_768]);
