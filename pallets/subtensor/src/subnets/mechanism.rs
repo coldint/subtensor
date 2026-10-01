@@ -165,7 +165,7 @@ impl<T: Config> Pallet<T> {
                 Self::get_max_allowed_validators(netuid),
             );
             Self::set_max_allowed_validators(netuid, 1);
-            let (stakes, _, _) = Self::get_stake_weights_for_network(netuid);
+            let (stakes, _, _) = Self::get_null_stake_weights_for_network(netuid);
             let winner = Self::null_validator_winner(&stakes);
             ValidatorPermit::<T>::insert(
                 netuid,

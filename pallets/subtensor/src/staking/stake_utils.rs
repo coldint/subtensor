@@ -317,6 +317,101 @@ impl<T: Config> Pallet<T> {
         (total_stake, alpha_stake, tao_stake)
     }
 
+    /// Null stake election uses the same inherited-stake arithmetic as Yuma,
+    /// but loads registered balances once and shares delegation inputs between
+    /// alpha and root stake. The cache is bounded by the registered population;
+    /// external parents are read directly rather than retained in the cache.
+    pub(crate) fn get_null_stake_weights_for_network(
+        netuid: NetUid,
+    ) -> (Vec<I64F64>, Vec<I64F64>, Vec<I64F64>) {
+        let n = Self::get_subnetwork_n(netuid);
+        let tao_weight = I64F64::saturating_from_num(Self::get_tao_weight());
+        let hotkeys: Vec<Option<T::AccountId>> = (0..n)
+            .map(|uid| Keys::<T>::try_get(netuid, uid).ok())
+            .collect();
+        let balances: BTreeMap<T::AccountId, (U96F32, U96F32)> = hotkeys
+            .iter()
+            .flatten()
+            .map(|hotkey| {
+                (
+                    hotkey.clone(),
+                    (
+                        U96F32::saturating_from_num(Self::get_stake_for_hotkey_on_subnet(
+                            hotkey, netuid,
+                        )),
+                        U96F32::saturating_from_num(Self::get_stake_for_hotkey_on_subnet(
+                            hotkey,
+                            NetUid::ROOT,
+                        )),
+                    ),
+                )
+            })
+            .collect();
+        let mut alpha_stake = Vec::with_capacity(n as usize);
+        let mut tao_stake = Vec::with_capacity(n as usize);
+        for maybe_hotkey in &hotkeys {
+            let Some(hotkey) = maybe_hotkey else {
+                alpha_stake.push(I64F64::saturating_from_num(0));
+                tao_stake.push(I64F64::saturating_from_num(0));
+                continue;
+            };
+            let (initial_alpha, initial_tao) = balances.get(hotkey).copied().unwrap_or_default();
+            let mut alpha_to_children = U96F32::saturating_from_num(0);
+            let mut tao_to_children = U96F32::saturating_from_num(0);
+            for (proportion, _) in Self::get_children(hotkey, netuid) {
+                let fraction = U96F32::saturating_from_num(proportion)
+                    .safe_div(U96F32::saturating_from_num(u64::MAX));
+                alpha_to_children =
+                    alpha_to_children.saturating_add(initial_alpha.saturating_mul(fraction));
+                tao_to_children =
+                    tao_to_children.saturating_add(initial_tao.saturating_mul(fraction));
+            }
+            let mut alpha_from_parents = U96F32::saturating_from_num(0);
+            let mut tao_from_parents = U96F32::saturating_from_num(0);
+            for (proportion, parent) in Self::get_parents(hotkey, netuid) {
+                let (parent_alpha, parent_tao) =
+                    balances.get(&parent).copied().unwrap_or_else(|| {
+                        (
+                            U96F32::saturating_from_num(Self::get_stake_for_hotkey_on_subnet(
+                                &parent, netuid,
+                            )),
+                            U96F32::saturating_from_num(Self::get_stake_for_hotkey_on_subnet(
+                                &parent,
+                                NetUid::ROOT,
+                            )),
+                        )
+                    });
+                let fraction = U96F32::saturating_from_num(proportion)
+                    .safe_div(U96F32::saturating_from_num(u64::MAX));
+                alpha_from_parents =
+                    alpha_from_parents.saturating_add(parent_alpha.saturating_mul(fraction));
+                tao_from_parents =
+                    tao_from_parents.saturating_add(parent_tao.saturating_mul(fraction));
+            }
+            // Preserve the original per-asset truncation before combining stake.
+            let alpha = if netuid.is_root() {
+                initial_alpha
+            } else {
+                initial_alpha
+                    .saturating_sub(alpha_to_children)
+                    .saturating_add(alpha_from_parents)
+            };
+            let tao = initial_tao
+                .saturating_sub(tao_to_children)
+                .saturating_add(tao_from_parents);
+            alpha_stake.push(I64F64::saturating_from_num(
+                alpha.saturating_to_num::<u64>(),
+            ));
+            tao_stake.push(I64F64::saturating_from_num(tao.saturating_to_num::<u64>()));
+        }
+        let total_stake = alpha_stake
+            .iter()
+            .zip(&tao_stake)
+            .map(|(alpha, tao)| alpha.saturating_add(tao.saturating_mul(tao_weight)))
+            .collect();
+        (total_stake, alpha_stake, tao_stake)
+    }
+
     /// Calculates the total inherited stake (alpha) held by a hotkey on a network, considering child/parent relationships.
     ///
     /// This function performs the following steps:

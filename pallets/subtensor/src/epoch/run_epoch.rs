@@ -741,8 +741,13 @@ impl<T: Config> Pallet<T> {
         // ===========
 
         // Access network stake as normalized vector.
+        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
         let (total_stake, _alpha_stake, _tao_stake): (Vec<I64F64>, Vec<I64F64>, Vec<I64F64>) =
-            Self::get_stake_weights_for_network(netuid);
+            if is_null {
+                Self::get_null_stake_weights_for_network(netuid)
+            } else {
+                Self::get_stake_weights_for_network(netuid)
+            };
 
         // Get the minimum stake required.
         let min_stake = Self::get_stake_threshold();
@@ -771,7 +776,6 @@ impl<T: Config> Pallet<T> {
         // == Validator permits ==
         // =======================
 
-        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
         // Strict comparison preserves the first UID when stake ties.
         let null_winner = if is_null {
             Self::null_validator_winner(&total_stake)

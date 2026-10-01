@@ -126,6 +126,8 @@ owner rewards increase the pool balance without rewriting ownership shares.
 Shared pools and first deposits keep the ordinary deposit accounting, and
 collateral capture and release still apply. The shared interface still uses ordered account maps, so this does not
 claim that every operation in the surrounding epoch pipeline is strictly linear.
+Delegation processing also scales with incoming parent edges, whose count is
+currently unbounded; a population ceiling alone does not bound that workload.
 When a Null epoch is due, the existing scheduler runs at most one epoch in that
 block. Remaining due subnets are deferred; blocks with only Yuma epochs retain
 the configured epoch cap. Payouts settle atomically in the epoch's block.

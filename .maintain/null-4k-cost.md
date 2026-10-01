@@ -17,7 +17,7 @@ the resulting hook charges exceed the runtime's four-second block limit.
 Totals use the runtime's RocksDB charges: 25 microseconds per read and
 100 microseconds per write. These are charged weights, not measured wall-clock
 durations. The fixtures include surrounding subnet/block bookkeeping, a fully
-funded epoch, positive stake at every UID, maximum parent/child relationships,
+funded epoch, positive stake at every UID, five-parent/five-child registered rings,
 and historical dense weight rows. The shared-pool fixture forces general
 deposit accounting by including nominators at every UID.
 
@@ -48,3 +48,18 @@ The legacy trim selector adds one mode-selection storage read. The runtime fee
 guard confirms its 100-byte baseline increases from 126,404 to 132,654 rao;
 only that deliberate change is repinned. These are interim charges before the
 new reference measurements, not release fee promises.
+
+These delegation fixtures are not a complete upper bound. Outgoing child lists
+are capped at five, but incoming parent lists are unbounded and parents need
+not be registered on the subnet. Full stake and dividend processing therefore
+also depends on the number of incoming parent edges, including external
+recipients. A bounded delegation workload is needed before claiming a complete
+4K resource envelope. The measured costs above describe these fixtures only.
+
+The next Null optimization shares alpha/root delegation inputs and caches raw
+balances for registered UIDs within one calculation. It preserves per-asset
+saturating arithmetic and truncation, and reads external parents without
+retaining them in the cache. Cache memory is bounded by the population. This
+reduces repeated host reads and fixed-point work; benchmark database counters
+can already coalesce repeated accesses, so no charged-weight reduction is
+claimed until fresh reference measurements complete.

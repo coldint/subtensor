@@ -54,6 +54,67 @@ fn seed_historical_weights(netuid: NetUid, uid: u16, destinations: Vec<u16>, wei
 }
 
 #[test]
+fn null_cached_stake_matches_original_delegation_arithmetic() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup([300_000_000, 100_000_000]);
+        let external = U256::from(99);
+        let registered_parent = U256::from(1);
+        let child = U256::from(0);
+        // Repeated parents exercise cache reuse; external parents must still
+        // contribute, and fractions must truncate per asset exactly as before.
+        ParentKeys::<Test>::insert(
+            child,
+            netuid,
+            vec![(u64::MAX / 3, registered_parent), (1, external)],
+        );
+        ChildKeys::<Test>::insert(child, netuid, vec![(u64::MAX / 7, external)]);
+        ParentKeys::<Test>::insert(
+            U256::from(2),
+            netuid,
+            vec![(u64::MAX / 5, registered_parent), (u64::MAX, external)],
+        );
+        // The original path returns zero for a missing registered key.
+        Keys::<Test>::remove(netuid, 3);
+        for balance in [0, 1, 987_654_321, u64::MAX] {
+            TotalHotkeyAlpha::<Test>::insert(external, netuid, AlphaBalance::from(balance));
+            TotalHotkeyAlpha::<Test>::insert(
+                external,
+                NetUid::ROOT,
+                AlphaBalance::from(balance.saturating_sub(1)),
+            );
+            TotalHotkeyAlpha::<Test>::insert(
+                registered_parent,
+                NetUid::ROOT,
+                AlphaBalance::from(123_456_789),
+            );
+            for suspended in [false, true] {
+                if suspended {
+                    ChildkeyThresholdSuspended::<Test>::insert(registered_parent, ());
+                    ChildkeyThresholdSuspended::<Test>::insert(external, ());
+                } else {
+                    ChildkeyThresholdSuspended::<Test>::remove(registered_parent);
+                    ChildkeyThresholdSuspended::<Test>::remove(external);
+                }
+                for owner in [registered_parent, external] {
+                    SubnetOwnerHotkey::<Test>::insert(netuid, owner);
+                    assert_eq!(
+                        SubtensorModule::get_null_stake_weights_for_network(netuid),
+                        SubtensorModule::get_stake_weights_for_network(netuid),
+                        "balance={balance}, suspended={suspended}, owner={owner:?}",
+                    );
+                }
+            }
+        }
+        // A cache lives only within one calculation, never across stake changes.
+        TotalHotkeyAlpha::<Test>::insert(child, netuid, AlphaBalance::from(42));
+        assert_eq!(
+            SubtensorModule::get_null_stake_weights_for_network(netuid),
+            SubtensorModule::get_stake_weights_for_network(netuid),
+        );
+    });
+}
+
+#[test]
 fn null_consensus_winner_incentives_and_stake_dividends_ignore_activity() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);
