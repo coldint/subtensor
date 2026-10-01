@@ -1494,8 +1494,22 @@ class AppContext:
                     }
                     if intent.op == "register_subnet":
                         execute_options["on_progress"] = _registration_progress
+                    execution_intent = intent
+                    if intent.op == "pow_register":
+                        # Human confirmation and key unlock may outlive a proof.
+                        # Refresh the public challenge after both, preserving the
+                        # already-approved registration target and signer.
+                        height = await client.block()
+                        if height <= intent.work_block or height - intent.work_block >= 2:
+                            execution_intent = await client.mine_pow_registration(
+                                intent.netuid,
+                                intent.hotkey_address(signer, intent.hotkey_ss58),
+                                public_view(signer, "coldkey").ss58_address,
+                                workers=intent.mining_workers,
+                                max_seconds=intent.mining_timeout,
+                            )
                     result = await client.execute(
-                        intent,
+                        execution_intent,
                         signer,
                         **execute_options,
                     )

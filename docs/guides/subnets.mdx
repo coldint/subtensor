@@ -153,7 +153,8 @@ The important owner-settable parameters, with chain defaults:
 | `min_burn` / `max_burn` | 0.0005 τ / 100 τ | Clamp on the neuron registration price. Read the live price with [`burn`](/docs/query/burn). |
 | `burn_half_life` | 360 | Blocks for the registration price to decay halfway toward `min_burn` when nobody registers. |
 | `burn_increase_mult` | 1.26 | Multiplier applied to the registration price after each successful registration. |
-| `max_allowed_uids` | 256 | UID slots. Floor 64; times mechanism count must stay ≤ 256. |
+| `max_allowed_uids` | 256 | UID slots. Floor 64; shared budget is 256 under Yuma or 4,096 under Null, divided by mechanism count. |
+| `network_pow_registration_allowed` | false | Enables fee-free proof-of-work registration on non-root subnets. General registration must also be enabled. |
 | `activity_cutoff_factor` | 13,889 | Per-mille of tempo; effective cutoff = factor × tempo / 1000 blocks (5,000 at tempo 360; bounds 1,000–50,000). A validator that hasn't set weights within the cutoff sits out until next epoch. Replaces the deprecated `activity_cutoff` (5,000). |
 | `serving_rate_limit` | 50 | Minimum blocks between `serve-axon` / `serve-prometheus` calls per key. |
 | `commit_reveal_weights_enabled` | true | Weights are committed hashed, revealed later. |
@@ -171,12 +172,12 @@ Parameters marked * have their own extrinsics on chain rather than a name in
 `set-hyperparameter`; if the SDK doesn't expose one, use the
 [raw-call escape hatch](/docs/concepts/advanced).
 
-Chain reads also return `rho`, `difficulty`, `adjustment_interval`,
-`adjustment_alpha`, and `target_regs_per_interval` — legacy registration and
-consensus parameters that still exist as storage but no longer drive neuron
-admission; the burn price decay/bump mechanism replaced the old PoW and
-adjustment-interval machinery. (`max_registrations_per_block` is still
-enforced.)
+Owners may enable [proof-of-work registration](/docs/hyperparameters/network-pow-registration-allowed)
+so miners can join without upfront TAO. Use `btcli subnets register --netuid 42 --pow`;
+burn registration remains available. `difficulty` controls the proof threshold,
+while the old `adjustment_interval`, `adjustment_alpha` and
+`target_regs_per_interval` controller remains inactive. Both registration paths
+share `max_registrations_per_block`; PoW does not bump the burn price.
 
 Two chain-side constraints on owner changes:
 

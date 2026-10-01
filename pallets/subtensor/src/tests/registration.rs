@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::*;
-use frame_support::{assert_noop, assert_ok};
+use frame_support::{assert_err, assert_noop, assert_ok};
 use frame_system::Config;
-use sp_core::U256;
+use sp_core::{H256, U256};
 use substrate_fixed::types::U64F64;
 use subtensor_runtime_common::{AlphaBalance, NetUid, NetUidStorageIndex, Token};
 
@@ -1904,5 +1904,349 @@ fn test_burned_register_immediately_bumps_price_many_multipliers_and_same_block_
             SubtensorModule::get_rao_recycled(NetUid::from(12u16)),
             1_048_575u64.into()
         );
+    });
+}
+#[test]
+fn pow_register_is_fee_free_and_preserves_tao_and_registration_price() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10, 0);
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        SubtensorModule::set_max_registrations_per_block(netuid, 2);
+        SubtensorModule::set_difficulty(netuid, 1);
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let burn = SubtensorModule::get_burn(netuid);
+        let work = *SubtensorModule::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey)
+            .as_fixed_bytes();
+        let call = crate::Call::<Test>::pow_register {
+            netuid,
+            work_block: 1,
+            nonce: 0,
+            work,
+            hotkey,
+        };
+        use frame_support::dispatch::GetDispatchInfo;
+        assert_eq!(
+            call.get_dispatch_info().pays_fee,
+            frame_support::dispatch::Pays::No
+        );
+        assert_ok!(SubtensorModule::pow_register(
+            RuntimeOrigin::signed(coldkey),
+            netuid,
+            1,
+            0,
+            work,
+            hotkey
+        ));
+        assert_eq!(SubtensorModule::get_subnetwork_n(netuid), 1);
+        assert_eq!(SubtensorModule::get_burn(netuid), burn);
+        assert_eq!(Balances::free_balance(coldkey), TaoBalance::ZERO);
+        assert_eq!(
+            MinerCollateral::<Test>::get((netuid, hotkey, coldkey)),
+            None
+        );
+        assert_eq!(Owner::<Test>::get(hotkey), coldkey);
+        assert_eq!(LastPowRegistrationBlock::<Test>::get(hotkey), Some(1));
+    });
+}
+
+#[test]
+fn pow_register_rejects_redirected_disabled_and_stale_work_without_mutation() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10, 0);
+        SubtensorModule::set_max_registrations_per_block(netuid, 2);
+        SubtensorModule::set_difficulty(netuid, 1);
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let work = *SubtensorModule::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey)
+            .as_fixed_bytes();
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                netuid,
+                1,
+                0,
+                work,
+                hotkey
+            ),
+            Error::<Test>::SubNetRegistrationDisabled
+        );
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(U256::from(23)),
+                netuid,
+                1,
+                0,
+                work,
+                hotkey
+            ),
+            Error::<Test>::InvalidSeal
+        );
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                netuid,
+                1,
+                1,
+                work,
+                hotkey
+            ),
+            Error::<Test>::InvalidSeal
+        );
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                netuid,
+                1,
+                0,
+                work,
+                U256::from(12)
+            ),
+            Error::<Test>::InvalidSeal
+        );
+        System::set_block_number(4);
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                netuid,
+                1,
+                0,
+                work,
+                hotkey
+            ),
+            Error::<Test>::InvalidWorkBlock
+        );
+        assert!(!Owner::<Test>::contains_key(hotkey));
+        assert!(!LastPowRegistrationBlock::<Test>::contains_key(hotkey));
+        assert_eq!(SubtensorModule::get_subnetwork_n(netuid), 0);
+    });
+}
+
+#[test]
+fn pow_register_replay_and_block_limit_apply_across_subnets() {
+    new_test_ext(1).execute_with(|| {
+        let a = NetUid::from(1);
+        let b = NetUid::from(2);
+        for netuid in [a, b] {
+            add_network(netuid, 10, 0);
+            SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+            SubtensorModule::set_max_registrations_per_block(netuid, 1);
+            SubtensorModule::set_difficulty(netuid, 1);
+        }
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let seal = |netuid, block, hotkey| {
+            *SubtensorModule::create_registration_seal(netuid, block, 0, &hotkey, &coldkey)
+                .as_fixed_bytes()
+        };
+        assert_ok!(SubtensorModule::pow_register(
+            RuntimeOrigin::signed(coldkey),
+            a,
+            1,
+            0,
+            seal(a, 1, hotkey),
+            hotkey
+        ));
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                b,
+                1,
+                0,
+                seal(b, 1, hotkey),
+                hotkey
+            ),
+            Error::<Test>::InvalidWorkBlock
+        );
+        let another = U256::from(12);
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                a,
+                1,
+                0,
+                seal(a, 1, another),
+                another
+            ),
+            Error::<Test>::TooManyRegistrationsThisBlock
+        );
+        assert!(!Owner::<Test>::contains_key(another));
+        System::set_block_number(3);
+        frame_system::BlockHash::<Test>::insert(2, H256::repeat_byte(2));
+        assert_ok!(SubtensorModule::pow_register(
+            RuntimeOrigin::signed(coldkey),
+            b,
+            2,
+            0,
+            seal(b, 2, hotkey),
+            hotkey
+        ));
+        assert_eq!(LastPowRegistrationBlock::<Test>::get(hotkey), Some(2));
+        assert_eq!(OwnedHotkeys::<Test>::get(coldkey), vec![hotkey]);
+    });
+}
+
+#[test]
+fn pow_register_bounds_fee_free_ownership_work() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10, 0);
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        SubtensorModule::set_max_registrations_per_block(netuid, 2);
+        SubtensorModule::set_difficulty(netuid, 1);
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let work = *SubtensorModule::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey)
+            .as_fixed_bytes();
+        let full = vec![U256::from(99); crate::MAX_STAKING_HOTKEYS as usize];
+        for owned in [true, false] {
+            OwnedHotkeys::<Test>::remove(coldkey);
+            StakingHotkeys::<Test>::remove(coldkey);
+            if owned {
+                OwnedHotkeys::<Test>::insert(coldkey, &full);
+            } else {
+                StakingHotkeys::<Test>::insert(coldkey, &full);
+            }
+            assert_err!(
+                SubtensorModule::pow_register(
+                    RuntimeOrigin::signed(coldkey),
+                    netuid,
+                    1,
+                    0,
+                    work,
+                    hotkey
+                ),
+                Error::<Test>::TooManyStakingHotkeys
+            );
+            assert!(!Owner::<Test>::contains_key(hotkey));
+            assert!(!LastPowRegistrationBlock::<Test>::contains_key(hotkey));
+            assert_eq!(SubtensorModule::get_subnetwork_n(netuid), 0);
+        }
+        // Reusing an established identity does not decode or grow either index.
+        Owner::<Test>::insert(hotkey, coldkey);
+        assert_ok!(SubtensorModule::pow_register(
+            RuntimeOrigin::signed(coldkey),
+            netuid,
+            1,
+            0,
+            work,
+            hotkey
+        ));
+    });
+}
+
+#[test]
+fn pow_register_pool_rejects_invalid_work_and_tags_valid_proofs() {
+    use crate::SubtensorTransactionExtension;
+    use sp_runtime::traits::{DispatchInfoOf, TransactionExtension, TxBaseImplication};
+    use sp_runtime::transaction_validity::TransactionSource;
+    new_test_ext(1).execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10, 0);
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        SubtensorModule::set_max_registrations_per_block(netuid, 2);
+        SubtensorModule::set_difficulty(netuid, 1);
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let work = *SubtensorModule::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey)
+            .as_fixed_bytes();
+        let validate = |work| {
+            let call = RuntimeCall::SubtensorModule(crate::Call::<Test>::pow_register {
+                netuid,
+                work_block: 1,
+                nonce: 0,
+                work,
+                hotkey,
+            });
+            SubtensorTransactionExtension::<Test>::new().validate(
+                RuntimeOrigin::signed(coldkey),
+                &call,
+                &DispatchInfoOf::<RuntimeCall>::default(),
+                0,
+                (),
+                &TxBaseImplication(()),
+                TransactionSource::External,
+            )
+        };
+        assert!(validate([0; 32]).is_err());
+        let (validity, _, _) = validate(work).unwrap();
+        assert_eq!(validity.longevity, 2);
+        assert_eq!(validity.provides.len(), 1);
+        assert!(!Owner::<Test>::contains_key(hotkey));
+        assert_eq!(SubtensorModule::get_subnetwork_n(netuid), 0);
+    });
+}
+
+#[test]
+fn pow_register_challenge_matches_sdk_golden_vector() {
+    new_test_ext(1).execute_with(|| {
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        assert_eq!(
+            SubtensorModule::create_registration_seal(
+                NetUid::from(1),
+                1,
+                7,
+                &U256::from(11),
+                &U256::from(22)
+            ),
+            H256::from([
+                6, 238, 241, 255, 240, 144, 200, 160, 196, 251, 187, 209, 112, 147, 52, 108, 154,
+                69, 179, 32, 143, 179, 255, 98, 82, 68, 116, 207, 75, 162, 203, 193
+            ])
+        );
+    });
+}
+
+#[test]
+fn pow_register_failure_rolls_back_new_ownership_and_replay_watermark() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10, 0);
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        SubtensorModule::set_max_registrations_per_block(netuid, 2);
+        SubtensorModule::set_difficulty(netuid, 1);
+        SubtensorModule::set_max_allowed_uids(netuid, 1);
+        let owner = U256::from(55);
+        let old_hotkey = U256::from(56);
+        Owner::<Test>::insert(old_hotkey, owner);
+        SubtensorModule::append_neuron(netuid, &old_hotkey, 1);
+        SubnetOwner::<Test>::insert(netuid, owner);
+        ImmuneOwnerUidsLimit::<Test>::insert(netuid, 1);
+        System::set_block_number(2);
+        frame_system::BlockHash::<Test>::insert(1, H256::repeat_byte(1));
+        let hotkey = U256::from(11);
+        let coldkey = U256::from(22);
+        let work = *SubtensorModule::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey)
+            .as_fixed_bytes();
+        assert_err!(
+            SubtensorModule::pow_register(
+                RuntimeOrigin::signed(coldkey),
+                netuid,
+                1,
+                0,
+                work,
+                hotkey
+            ),
+            Error::<Test>::NoNeuronIdAvailable
+        );
+        assert_eq!(Keys::<Test>::get(netuid, 0), old_hotkey);
+        assert!(!Owner::<Test>::contains_key(hotkey));
+        assert!(OwnedHotkeys::<Test>::get(coldkey).is_empty());
+        assert!(StakingHotkeys::<Test>::get(coldkey).is_empty());
+        assert!(!LastPowRegistrationBlock::<Test>::contains_key(hotkey));
+        assert_eq!(RegistrationsThisBlock::<Test>::get(netuid), 0);
     });
 }

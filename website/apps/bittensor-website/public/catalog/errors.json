@@ -4377,7 +4377,7 @@
     },
     "POWRegistrationDisabled": {
       "code": "disabled",
-      "description": "`sudo_set_network_pow_registration_allowed` unconditionally fails because proof-of-work registration is deprecated and its toggle can no longer be changed. Nothing to check; the call is permanently disabled.",
+      "description": "This legacy error is retained for older runtimes that disabled PoW registration. Upgraded runtimes let the subnet owner enable network_pow_registration_allowed; general registration must also be enabled. Root does not accept PoW registration.",
       "docs_url": "/docs/errors/chain/POWRegistrationDisabled",
       "markdown_url": "/llms.mdx/docs/errors/chain/POWRegistrationDisabled/content.md",
       "pallets": [
@@ -5151,7 +5151,7 @@
     },
     "SubNetRegistrationDisabled": {
       "code": "disabled",
-      "description": "Neuron registration is switched off: either the subnet's `NetworkRegistrationAllowed` flag is false, or network creation has not opened yet (`NetworkRegistrationStartBlock` is in the future). Check the network_registration_allowed hyperparameter for the netuid.",
+      "description": "Neuron registration is switched off: either the subnet's `NetworkRegistrationAllowed` flag is false, the PoW-specific toggle is off for a pow_register call, or network creation has not opened yet (`NetworkRegistrationStartBlock` is in the future). Check the network_registration_allowed hyperparameter for the netuid.",
       "docs_url": "/docs/errors/chain/SubNetRegistrationDisabled",
       "markdown_url": "/llms.mdx/docs/errors/chain/SubNetRegistrationDisabled/content.md",
       "pallets": [

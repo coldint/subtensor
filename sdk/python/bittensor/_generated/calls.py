@@ -346,6 +346,11 @@ class SubtensorModule:
         return Call('SubtensorModule', 'move_stake_limit', {'origin_hotkey': origin_hotkey, 'destination_hotkey': destination_hotkey, 'origin_netuid': origin_netuid, 'destination_netuid': destination_netuid, 'alpha_amount': alpha_amount, 'limit_price': limit_price, 'allow_partial': allow_partial})
 
     @staticmethod
+    def pow_register(netuid: 'NetUid', work_block: 'u64', nonce: 'u64', work: 'Any', hotkey: 'AccountId32') -> Call:
+        'Register by owner-enabled PoW, without TAO burn, collateral purchase, or transaction fee. The signing coldkey is bound into the proof. Transaction validation verifies the proof before pool admission.'
+        return Call('SubtensorModule', 'pow_register', {'netuid': netuid, 'work_block': work_block, 'nonce': nonce, 'work': work, 'hotkey': hotkey})
+
+    @staticmethod
     def recycle_alpha(hotkey: 'AccountId32', amount: 'AlphaBalance', netuid: 'NetUid') -> Call:
         'Recycles alpha from a cold/hot key pair, reducing AlphaOut on a subnet  # Arguments * `origin`: The origin of the call (must be signed by the coldkey) * `hotkey`: The hotkey account * `amount`: The amount of alpha to recycle * `netuid`: The subnet ID  # Events Emits a `TokensRecycled` event on success.'
         return Call('SubtensorModule', 'recycle_alpha', {'hotkey': hotkey, 'amount': amount, 'netuid': netuid})

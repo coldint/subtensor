@@ -196,6 +196,7 @@ class SubtensorModule:
     IsNetworkMember = Item('SubtensorModule', 'IsNetworkMember', 'bool')
     NetworkRegistrationAllowed = Item('SubtensorModule', 'NetworkRegistrationAllowed', 'bool')
     NetworkPowRegistrationAllowed = Item('SubtensorModule', 'NetworkPowRegistrationAllowed', 'bool')
+    LastPowRegistrationBlock = Item('SubtensorModule', 'LastPowRegistrationBlock', 'u64')
     NetworkRegisteredAt = Item('SubtensorModule', 'NetworkRegisteredAt', 'u64')
     RegisteredSubnetCounter = Item('SubtensorModule', 'RegisteredSubnetCounter', 'u64')
     PendingServerEmission = Item('SubtensorModule', 'PendingServerEmission', 'AlphaBalance')

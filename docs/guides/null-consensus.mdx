@@ -75,6 +75,22 @@ Yuma epoch's registration cutoff, so replaced miners cannot inherit old bonds.
 The mechanism-count call charges for checking pending queues and removing
 historical state when the mechanism count is reduced.
 
+## Registration without TAO
+
+Owners can opt into PoW registration for Null or Yuma subnets:
+
+```bash
+btcli hparams set --netuid 1 --name network_pow_registration_allowed --value true
+btcli subnets register --netuid 1 --pow --yes
+```
+
+General registration must also be open. Direct zero-tip PoW submission pays no
+registration burn, initial collateral purchase or transaction fee. The CLI
+refreshes stale mining challenges, uses public addresses in CPU workers, and
+signs through the usual coldkey workflow. Use `--pow-workers` and `--pow-timeout`
+to bound mining resources. Work does not bypass pruning, immunity, ownership or
+per-block registration limits. Root keeps its separate registration path.
+
 ## Exact integer weights
 
 Null stores submitted u16 values without max-upscaling. Values are relative integers
@@ -151,3 +167,27 @@ The SDK's vendored ABIs include the new functions.
 target when inactive. `getNullPruningBatchSize()` reads the current runtime's
 deletion bound. `getSavedYumaValidatorLimit(uint16)` returns `(present, limit)`
 with a zero limit when absent. These are additive selectors at `0x0803`.
+
+New PoW hotkey associations keep each coldkey’s ownership and staking indexes below the existing 256-entry staking work limit. An already-associated hotkey can register on another subnet without growing those indexes.
+
+The synchronous SDK exposes the same public challenge miner:
+
+```python
+import bittensor as bt
+
+# wallet is the existing local wallet; mining needs only its public addresses.
+with bt.Subtensor("test") as sub:
+    proof = sub.mine_pow_registration(
+        netuid=1,
+        hotkey_ss58=wallet.hotkey.ss58_address,
+        coldkey_ss58=wallet.coldkeypub.ss58_address,
+        workers=4,
+    )
+    result = sub.execute(proof, wallet)
+    result.raise_for_failure()
+```
+
+For async clients, await `client.mine_pow_registration(...)` and then
+`client.execute(...)`. Submit a returned proof promptly. The CLI refreshes an
+expired proof after confirmation and key unlock while keeping the selected subnet
+and hotkey unchanged.

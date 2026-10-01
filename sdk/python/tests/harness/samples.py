@@ -79,6 +79,7 @@ INTENT_SAMPLES: dict[str, dict] = {
     "stake_burn": {"netuid": 1, "amount_tao": 1.0, "limit_price": 10**9},
     "transfer": {"dest_ss58": BOB, "amount_tao": 1.0},
     "transfer_all": {"dest_ss58": BOB},
+    "pow_register": {"netuid": 1, "work_block": 1, "nonce": 0, "work_hex": "ab" * 32},
     "burned_register": {"netuid": 1},
     "root_register": {},
     "register_subnet": {},

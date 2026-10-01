@@ -25,11 +25,10 @@ walked difficulty up until it hit this ceiling. The mainnet default is
 `u64::MAX / 4` ([`SubtensorInitialMaxDifficulty`](/code/runtime/src/lib.rs#L814)
 in `runtime/src/lib.rs`).
 
-On the current runtime PoW registration is deprecated — the `register`
-extrinsic routes to burned registration and nothing adjusts `difficulty`
-between intervals — so this ceiling is dormant. The playground opens on a
-registration-rush scenario where difficulty ratchets up until it pins
-against the bold ceiling line:
+Owner-enabled PoW registration now uses the current stored `difficulty`.
+The automatic controller remains retired, so this historical parameter does
+not adjust the new PoW threshold automatically. The playground below describes
+the former controller; root sets the actual work threshold explicitly.
 
 <HyperparamPowDifficulty focus="max_difficulty" />
 

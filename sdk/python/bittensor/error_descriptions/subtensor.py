@@ -781,7 +781,8 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "SubNetRegistrationDisabled": (
         "Neuron registration is switched off: either the subnet's `NetworkRegistrationAllowed` "
-        "flag is false, or network creation has not opened yet (`NetworkRegistrationStartBlock` "
+        "flag is false, the PoW-specific toggle is off for a pow_register call, or network "
+        "creation has not opened yet (`NetworkRegistrationStartBlock` "
         "is in the future). Check the network_registration_allowed hyperparameter for the "
         "netuid."
     ),

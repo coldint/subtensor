@@ -1,3 +1,4 @@
+use crate::weights::WeightInfo as _;
 use crate::{
     Call, CheckColdkeySwap, CheckDelegateTake, CheckEvmKeyAssociation, CheckRateLimits,
     CheckServingEndpoints, CheckWeights, Config, Error, Pallet, guards::applicable_call,
@@ -102,6 +103,17 @@ impl<T: Config + Send + Sync + TypeInfo> SubtensorTransactionExtension<T> {
 
         CheckColdkeySwap::<T>::check(who, call)?;
         Self::check_basket_calls(who, call)?;
+
+        if let Some(Call::pow_register {
+            netuid,
+            work_block,
+            nonce,
+            work,
+            hotkey,
+        }) = call.is_sub_type()
+        {
+            Pallet::<T>::check_pow_registration(who, *netuid, *work_block, *nonce, work, hotkey)?;
+        }
 
         let commitment_call: Option<&pallet_commitments::Call<T>> = call.is_sub_type();
         if let Some(pallet_commitments::Call::set_commitment { netuid, .. }) = commitment_call {
@@ -336,6 +348,11 @@ where
 
     fn weight(&self, call: &CallOf<T>) -> Weight {
         use DispatchExtension as DE;
+        let pow_weight = if matches!(call.is_sub_type(), Some(Call::<T>::pow_register { .. })) {
+            <T as Config>::WeightInfo::check_pow_registration()
+        } else {
+            Weight::zero()
+        };
         <CheckColdkeySwap<T> as DE<CallOf<T>>>::weight(call)
             .saturating_add(<CheckWeights<T> as DE<CallOf<T>>>::weight(call))
             .saturating_add(<CheckRateLimits<T> as DE<CallOf<T>>>::weight(call))
@@ -344,6 +361,7 @@ where
             .saturating_add(<CheckEvmKeyAssociation<T> as DE<CallOf<T>>>::weight(call))
             .saturating_add(Self::commitment_weight(call))
             .saturating_add(Self::basket_trade_weight(call))
+            .saturating_add(pow_weight)
     }
 
     fn validate(
@@ -359,6 +377,15 @@ where
         Self::check(&origin, call)
             .map(|()| {
                 let mut validity = ValidTransaction::default();
+                if let Some(Call::<T>::pow_register {
+                    work_block, hotkey, ..
+                }) = call.is_sub_type()
+                {
+                    validity.longevity = 2;
+                    validity
+                        .provides
+                        .push((b"pow-registration", hotkey, work_block).encode());
+                }
                 if let Some(who) = origin.as_signer()
                     && let Some(call) = applicable_call(call, CheckRateLimits::<T>::applies_to)
                 {

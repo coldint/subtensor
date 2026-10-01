@@ -277,6 +277,32 @@ mod pallet_benchmarks {
     }
 
     #[benchmark]
+    fn pow_register() {
+        let (netuid, hotkey, coldkey, work) = setup_pow_registration_benchmark::<T>();
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(coldkey),
+            netuid,
+            1,
+            0,
+            work,
+            hotkey.clone(),
+        );
+        assert!(Uids::<T>::contains_key(netuid, &hotkey));
+    }
+
+    #[benchmark]
+    fn check_pow_registration() {
+        let (netuid, hotkey, coldkey, work) = setup_pow_registration_benchmark::<T>();
+        #[block]
+        {
+            assert_ok!(Subtensor::<T>::check_pow_registration(
+                &coldkey, netuid, 1, 0, &work, &hotkey
+            ));
+        }
+    }
+
+    #[benchmark]
     fn root_register() {
         let coldkey: T::AccountId = account("root_register_cold", 0, 1);
         let hotkey: T::AccountId = account("root_register_hot", 0, 1);

@@ -36,6 +36,9 @@ use core::marker::PhantomData;
 
 /// Weight functions needed for `pallet_subtensor`.
 pub trait WeightInfo {
+    // Reference CI replaces these fallback aliases before release.
+    fn pow_register() -> Weight { Self::register() }
+    fn check_pow_registration() -> Weight { Self::register() }
 	fn register() -> Weight;
 	fn set_weights() -> Weight;
 	fn add_stake() -> Weight;

@@ -332,16 +332,18 @@ call_filter_group!(
 // Permissionless proof-of-work registration (costs no TAO).
 call_filter_group!(
     PowRegistrationCalls,
-    [
-        RuntimeCall::SubtensorModule(SubtensorCall::register),
-        RuntimeCall::SubtensorModule(SubtensorCall::register_limit),
-    ]
+    [RuntimeCall::SubtensorModule(SubtensorCall::pow_register),]
 );
 
 // Registration paid by burning TAO (spends value, unlike POW registration).
 call_filter_group!(
     BurnedRegistrationCalls,
-    [RuntimeCall::SubtensorModule(SubtensorCall::burned_register),]
+    [
+        // These legacy calls now use burn registration despite their old names.
+        RuntimeCall::SubtensorModule(SubtensorCall::register),
+        RuntimeCall::SubtensorModule(SubtensorCall::register_limit),
+        RuntimeCall::SubtensorModule(SubtensorCall::burned_register),
+    ]
 );
 
 // Registration into the root subnet.

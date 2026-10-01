@@ -305,7 +305,7 @@ pub(super) fn set_benchmark_block_number<T: Config>(block_number: u64) {
 /// intentionally large so this hook benchmark reflects a 128-subnet mainnet
 /// state instead of a one-subnet toy state.
 ///
-fn initialize_block_step_neuron_vectors<T: Config>(netuid: NetUid, count: u16) {
+pub(super) fn initialize_block_step_neuron_vectors<T: Config>(netuid: NetUid, count: u16) {
     let n = usize::from(count);
     let index = NetUidStorageIndex::from(netuid);
     SubnetworkN::<T>::insert(netuid, count);
@@ -318,6 +318,49 @@ fn initialize_block_step_neuron_vectors<T: Config>(netuid: NetUid, count: u16) {
     ValidatorTrust::<T>::insert(netuid, vec![PerU16::zero(); n]);
     ValidatorPermit::<T>::insert(netuid, vec![false; n]);
     StakeWeight::<T>::insert(netuid, vec![0u16; n]);
+}
+
+pub(super) fn setup_pow_registration_benchmark<T: Config>()
+-> (NetUid, T::AccountId, T::AccountId, [u8; 32]) {
+    let netuid = NetUid::from(1);
+    setup_full_subnet_registration_benchmark::<T>(netuid, "pow_existing_hot", "pow_existing_cold");
+    let old_n = SubnetworkN::<T>::get(netuid);
+    let n = crate::subnets::mechanism::NULL_UID_BUDGET;
+    initialize_block_step_neuron_vectors::<T>(netuid, n);
+    for uid in old_n..n {
+        let hotkey: T::AccountId = account("pow_existing_hot", u32::from(uid), 0);
+        let owner: T::AccountId = account("pow_existing_cold", u32::from(uid), 0);
+        Owner::<T>::insert(&hotkey, owner);
+        Keys::<T>::insert(netuid, uid, &hotkey);
+        Uids::<T>::insert(netuid, &hotkey, uid);
+        IsNetworkMember::<T>::insert(&hotkey, netuid, true);
+        BlockAtRegistration::<T>::insert(netuid, uid, 0);
+    }
+    Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
+    Subtensor::<T>::set_max_allowed_uids(netuid, n);
+    Subtensor::<T>::set_network_pow_registration_allowed(netuid, true);
+    Subtensor::<T>::set_difficulty(netuid, 1);
+    system::Pallet::<T>::set_block_number(2u32.into());
+    let hash = <T as frame_system::Config>::Hash::decode(&mut &[1u8; 32][..])
+        .expect("32-byte runtime hash");
+    system::BlockHash::<T>::insert(BlockNumberFor::<T>::from(1u32), hash);
+    // Include the maximal subnet-local ownership scan and immunity sort.
+    let subnet_owner: T::AccountId = account("pow_subnet_owner", 0, 0);
+    SubnetOwner::<T>::insert(netuid, &subnet_owner);
+    for uid in 0..n {
+        Owner::<T>::insert(Keys::<T>::get(netuid, uid), &subnet_owner);
+    }
+    ImmuneOwnerUidsLimit::<T>::insert(netuid, n - 1);
+    let hotkey = account("pow_new_hot", 0, 0);
+    let coldkey = account("pow_new_cold", 0, 0);
+    let owned = (0..crate::MAX_STAKING_HOTKEYS - 1)
+        .map(|index| account::<T::AccountId>("pow_owned", index, 0))
+        .collect::<Vec<_>>();
+    OwnedHotkeys::<T>::insert(&coldkey, &owned);
+    StakingHotkeys::<T>::insert(&coldkey, owned);
+    let work =
+        *Subtensor::<T>::create_registration_seal(netuid, 1, 0, &hotkey, &coldkey).as_fixed_bytes();
+    (netuid, hotkey, coldkey, work)
 }
 
 /// Only the runtime-capped number of subnet epochs are made due in the measured

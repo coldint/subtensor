@@ -846,6 +846,22 @@ mod dispatches {
             Self::do_register_with_post_info(origin, netuid, hotkey)
         }
 
+        /// Register by owner-enabled PoW, without TAO burn, collateral purchase,
+        /// or transaction fee. The signing coldkey is bound into the proof.
+        /// Transaction validation verifies the proof before pool admission.
+        #[pallet::call_index(152)]
+        #[pallet::weight((<T as crate::pallet::Config>::WeightInfo::pow_register(), Pays::No))]
+        pub fn pow_register(
+            origin: OriginFor<T>,
+            netuid: NetUid,
+            work_block: u64,
+            nonce: u64,
+            work: [u8; 32],
+            hotkey: T::AccountId,
+        ) -> DispatchResult {
+            Self::do_pow_register(origin, netuid, work_block, nonce, work, hotkey)
+        }
+
         /// The extrinsic for user to change its hotkey in subnet or all subnets.
         ///
         /// # Arguments

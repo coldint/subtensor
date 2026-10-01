@@ -1125,17 +1125,34 @@ fn test_sudo_set_network_lock_reduction_interval() {
 fn test_sudo_set_network_pow_registration_allowed() {
     new_test_ext().execute_with(|| {
         let netuid = NetUid::from(1);
-        let to_be_set: bool = true;
         add_network(netuid, 10);
-
-        assert_eq!(
+        assert!(!SubtensorModule::get_network_pow_registration_allowed(
+            netuid
+        ));
+        assert_err!(
             AdminUtils::sudo_set_network_pow_registration_allowed(
-                <<Test as Config>::RuntimeOrigin>::signed(U256::from(1)),
+                RuntimeOrigin::signed(U256::from(1)),
                 netuid,
-                to_be_set
+                true
             ),
-            Err(Error::<Test>::POWRegistrationDisabled.into())
+            DispatchError::BadOrigin
         );
+        assert_ok!(AdminUtils::sudo_set_network_pow_registration_allowed(
+            RuntimeOrigin::root(),
+            netuid,
+            true
+        ));
+        assert!(SubtensorModule::get_network_pow_registration_allowed(
+            netuid
+        ));
+        assert_ok!(AdminUtils::sudo_set_network_pow_registration_allowed(
+            RuntimeOrigin::root(),
+            netuid,
+            false
+        ));
+        assert!(!SubtensorModule::get_network_pow_registration_allowed(
+            netuid
+        ));
     });
 }
 
@@ -4115,5 +4132,59 @@ fn null_repeated_mode_setting_preserves_saved_yuma_validator_limit() {
         ));
         assert_eq!(SubtensorModule::get_max_allowed_validators(netuid), 123);
         assert_eq!(SavedYumaMaxAllowedValidators::<Test>::get(netuid), None);
+    });
+}
+
+#[test]
+fn pow_toggle_obeys_owner_cooldown_freeze_and_root_exclusion() {
+    new_test_ext().execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10);
+        let owner = U256::from(9);
+        SubnetOwner::<Test>::insert(netuid, owner);
+        pallet_subtensor::OwnerHyperparamRateLimit::<Test>::put(5);
+        assert_ok!(AdminUtils::sudo_set_network_pow_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            true
+        ));
+        assert!(
+            AdminUtils::sudo_set_network_pow_registration_allowed(
+                RuntimeOrigin::signed(owner),
+                netuid,
+                false
+            )
+            .is_err()
+        );
+        assert!(SubtensorModule::get_network_pow_registration_allowed(
+            netuid
+        ));
+        pallet_subtensor::LastEpochBlock::<Test>::insert(netuid, 0);
+        assert_ok!(AdminUtils::sudo_set_admin_freeze_window(
+            RuntimeOrigin::root(),
+            3
+        ));
+        run_to_block(8);
+        assert_noop!(
+            AdminUtils::sudo_set_network_pow_registration_allowed(
+                RuntimeOrigin::root(),
+                netuid,
+                false
+            ),
+            SubtensorError::<Test>::AdminActionProhibitedDuringWeightsWindow
+        );
+        assert_ok!(AdminUtils::sudo_set_admin_freeze_window(
+            RuntimeOrigin::root(),
+            0
+        ));
+        add_network(NetUid::ROOT, 10);
+        assert_err!(
+            AdminUtils::sudo_set_network_pow_registration_allowed(
+                RuntimeOrigin::root(),
+                NetUid::ROOT,
+                true
+            ),
+            Error::<Test>::NotPermittedOnRootSubnet
+        );
     });
 }

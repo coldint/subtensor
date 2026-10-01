@@ -20,6 +20,136 @@ enum RegistrationRefusal {
 }
 
 impl<T: Config> Pallet<T> {
+    /// Registration challenge binds the subnet, recent block, hotkey and signing
+    /// coldkey. Changing any of them invalidates mined work.
+    pub fn create_registration_seal(
+        netuid: NetUid,
+        work_block: u64,
+        nonce: u64,
+        hotkey: &T::AccountId,
+        coldkey: &T::AccountId,
+    ) -> H256 {
+        let mut payload = b"subtensor-pow-register-v1".to_vec();
+        payload.extend_from_slice(&u16::from(netuid).to_le_bytes());
+        payload.extend_from_slice(Self::get_block_hash_from_u64(work_block).as_bytes());
+        payload.extend_from_slice(&hotkey.encode());
+        payload.extend_from_slice(&coldkey.encode());
+        payload.extend_from_slice(&nonce.to_le_bytes());
+        H256::from(keccak_256(&sha2_256(&payload)))
+    }
+
+    /// Fixed-cost, read-only admission check used both by the transaction pool
+    /// and dispatch. Capacity replacement is deliberately checked only during
+    /// dispatch, so pool admission cannot force a full subnet pruning scan.
+    pub fn check_pow_registration(
+        coldkey: &T::AccountId,
+        netuid: NetUid,
+        work_block: u64,
+        nonce: u64,
+        work: &[u8; 32],
+        hotkey: &T::AccountId,
+    ) -> Result<(), Error<T>> {
+        ensure!(
+            !netuid.is_root(),
+            Error::<T>::RegistrationNotPermittedOnRootSubnet
+        );
+        ensure!(Self::if_subnet_exist(netuid), Error::<T>::SubnetNotExists);
+        ensure!(
+            Self::get_network_registration_allowed(netuid)
+                && Self::get_network_pow_registration_allowed(netuid),
+            Error::<T>::SubNetRegistrationDisabled
+        );
+        ensure!(
+            !Uids::<T>::contains_key(netuid, hotkey),
+            Error::<T>::HotKeyAlreadyRegisteredInSubNet
+        );
+        ensure!(
+            Self::get_max_allowed_uids(netuid) != 0,
+            Error::<T>::NoNeuronIdAvailable
+        );
+        ensure!(
+            RegistrationsThisBlock::<T>::get(netuid) < MaxRegistrationsPerBlock::<T>::get(netuid),
+            Error::<T>::TooManyRegistrationsThisBlock
+        );
+        let now = Self::get_current_block_as_u64();
+        ensure!(
+            work_block < now && now.saturating_sub(work_block) < 3,
+            Error::<T>::InvalidWorkBlock
+        );
+        ensure!(
+            LastPowRegistrationBlock::<T>::get(hotkey).is_none_or(|last| work_block > last),
+            Error::<T>::InvalidWorkBlock
+        );
+        ensure!(
+            Self::get_block_hash_from_u64(work_block) != H256::zero(),
+            Error::<T>::InvalidWorkBlock
+        );
+        let hash = H256::from(*work);
+        ensure!(
+            hash == Self::create_registration_seal(netuid, work_block, nonce, hotkey, coldkey),
+            Error::<T>::InvalidSeal
+        );
+        ensure!(
+            Self::hash_meets_difficulty(&hash, Self::get_difficulty(netuid).max(U256::one())),
+            Error::<T>::InvalidDifficulty
+        );
+        ensure!(
+            Self::is_subnet_account_id(hotkey).is_none(),
+            Error::<T>::CannotUseSystemAccount
+        );
+        ensure!(
+            Owner::<T>::try_get(hotkey).map_or(true, |owner| owner == *coldkey),
+            Error::<T>::NonAssociatedColdKey
+        );
+        // A fee-free call must not decode unbounded legacy ownership indexes.
+        // New identities stay within the existing coldkey staking-work budget;
+        // an already-associated hotkey does not grow either list.
+        if !Owner::<T>::contains_key(hotkey) {
+            ensure!(
+                OwnedHotkeys::<T>::decode_len(coldkey).unwrap_or(0)
+                    < crate::MAX_STAKING_HOTKEYS as usize
+                    && StakingHotkeys::<T>::decode_len(coldkey).unwrap_or(0)
+                        < crate::MAX_STAKING_HOTKEYS as usize,
+                Error::<T>::TooManyStakingHotkeys
+            );
+        }
+        Ok(())
+    }
+
+    /// The proof pays for admission, not a TAO transfer. Registration and proof
+    /// consumption are atomic, including ownership and full-subnet replacement.
+    pub fn do_pow_register(
+        origin: OriginFor<T>,
+        netuid: NetUid,
+        work_block: u64,
+        nonce: u64,
+        work: [u8; 32],
+        hotkey: T::AccountId,
+    ) -> DispatchResult {
+        let coldkey = ensure_signed(origin)?;
+        Self::check_pow_registration(&coldkey, netuid, work_block, nonce, &work, &hotkey)?;
+        with_transaction(|| {
+            let result = (|| -> DispatchResult {
+                Self::create_account_if_non_existent(&coldkey, &hotkey)?;
+                let uid = Self::register_neuron(netuid, &hotkey)?;
+                // Legacy replacement protects the owner's primary hotkey by
+                // returning early. Never consume work for a skipped replacement.
+                ensure!(
+                    Uids::<T>::get(netuid, &hotkey) == Some(uid),
+                    Error::<T>::NoNeuronIdAvailable
+                );
+                LastPowRegistrationBlock::<T>::insert(&hotkey, work_block);
+                RegistrationsThisBlock::<T>::mutate(netuid, |count| count.saturating_inc());
+                Self::deposit_event(Event::NeuronRegistered(netuid, uid, hotkey.clone()));
+                Ok(())
+            })();
+            match result {
+                Ok(()) => TransactionOutcome::Commit(Ok(())),
+                Err(error) => TransactionOutcome::Rollback(Err(error)),
+            }
+        })
+    }
+
     pub fn register_neuron(netuid: NetUid, hotkey: &T::AccountId) -> Result<u16, DispatchError> {
         let block_number: u64 = Self::get_current_block_as_u64();
         let current_subnetwork_n: u16 = Self::get_subnetwork_n(netuid);
@@ -334,15 +464,16 @@ impl<T: Config> Pallet<T> {
     }
 
     fn get_immune_owner_tuples(netuid: NetUid, coldkey: &T::AccountId) -> Vec<(u16, T::AccountId)> {
-        // Gather (block, uid, hotkey) only for hotkeys that have a UID and a registration block.
-        let mut triples: Vec<(u64, u16, T::AccountId)> = OwnedHotkeys::<T>::get(coldkey)
-            .into_iter()
-            .filter_map(|hotkey| {
-                // Uids must exist, filter_map ignores hotkeys without UID
-                Uids::<T>::get(netuid, &hotkey).map(|uid| {
-                    let block = BlockAtRegistration::<T>::get(netuid, uid);
-                    (block, uid, hotkey)
-                })
+        // Walk this subnet's bounded UID population rather than the owner's
+        // lifetime ownership index, which may contain arbitrarily many keys
+        // registered elsewhere. Owner is the authoritative association.
+        let mut triples: Vec<(u64, u16, T::AccountId)> = (0..Self::get_subnetwork_n(netuid))
+            .filter_map(|uid| {
+                let hotkey = Keys::<T>::try_get(netuid, uid).ok()?;
+                if Owner::<T>::try_get(&hotkey).ok().as_ref() != Some(coldkey) {
+                    return None;
+                }
+                Some((BlockAtRegistration::<T>::get(netuid, uid), uid, hotkey))
             })
             .collect();
 
@@ -383,7 +514,10 @@ impl<T: Config> Pallet<T> {
         }
 
         let owner_ck = SubnetOwner::<T>::get(netuid);
-        let immortal_hotkeys = Self::get_immune_owner_hotkeys(netuid, &owner_ck);
+        let immortal_hotkeys: sp_std::collections::btree_set::BTreeSet<_> =
+            Self::get_immune_owner_hotkeys(netuid, &owner_ck)
+                .into_iter()
+                .collect();
         let emissions: Vec<AlphaBalance> = Emission::<T>::get(netuid);
 
         // Single pass:

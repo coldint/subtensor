@@ -960,3 +960,49 @@ class TestResolveHotkeySs58:
         result = invoke("stake", "child", "revoke", "--netuid", "1", "--hotkey", "hotkey1")
         assert result.exit_code == 0, result.output
         assert captured[0].hotkey_ss58 == alt_hotkey
+
+
+class TestPowRegistration:
+    def test_root_rejects_pow_without_mining(self, fake, monkeypatch):
+        async def mine(*args, **kwargs):
+            pytest.fail("root must not start mining")
+
+        monkeypatch.setattr(Client, "mine_pow_registration", mine)
+        result = invoke("subnets", "register", "--netuid", "0", "--pow", "--yes")
+        assert result.exit_code == 2, result.output
+        assert not fake.submissions
+
+    def test_cli_refreshes_expired_proof_after_confirmation(self, fake, monkeypatch):
+        from bittensor.intents import PowRegister
+
+        calls = []
+
+        async def mine(self, netuid, hotkey_ss58, coldkey_ss58, *, workers, max_seconds):
+            calls.append((netuid, hotkey_ss58, coldkey_ss58, workers, max_seconds))
+            return PowRegister(
+                netuid=netuid,
+                hotkey_ss58=hotkey_ss58,
+                work_block=fake.block - (2 if len(calls) == 1 else 1),
+                nonce=0,
+                work_hex="ab" * 32,
+                mining_workers=workers,
+                mining_timeout=max_seconds,
+            )
+
+        monkeypatch.setattr(Client, "mine_pow_registration", mine)
+        result = invoke(
+            "subnets",
+            "register",
+            "--netuid",
+            "1",
+            "--pow",
+            "--pow-workers",
+            "1",
+            "--pow-timeout",
+            "10",
+            "--yes",
+        )
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 2
+        assert calls[0] == calls[1]
+        assert len(fake.submissions) == 1

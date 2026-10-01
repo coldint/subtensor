@@ -24,17 +24,17 @@ export default function Page() {
           <h2 className={styles.subtitle}>What changes</h2>
           <p>
             Subnet owners can opt into a second epoch mechanism. Null consensus takes miner
-            incentives from the highest-stake UID, which holds the sole validator permit. Ties select the
-            first UID. Only that permit holder may submit or commit weights. All staked UIDs retain
-            proportional dividends, including inactive UIDs and those without permits. When the selected row has no
-            valid weights, every registered UID shares the miner budget equally. Yuma remains the
-            default for existing and new subnets.
+            incentives from the highest-stake UID, which holds the sole validator permit. Ties
+            select the first UID. Only that permit holder may submit or commit weights. All staked
+            UIDs retain proportional dividends, including inactive UIDs and those without permits.
+            When the selected row has no valid weights, every registered UID shares the miner budget
+            equally. Yuma remains the default for existing and new subnets.
           </p>
           <p>
             Null skips consensus and bond calculations and leaves bond storage unchanged. The epoch
-            and payout interfaces remain compatible. Rewards to an existing sole-owner staking
-            pool increase its balance without rewriting ownership shares; shared pools and
-            collateral retain their accounting protections. Existing submission stake thresholds,
+            and payout interfaces remain compatible. Rewards to an existing sole-owner staking pool
+            increase its balance without rewriting ownership shares; shared pools and collateral
+            retain their accounting protections. Existing submission stake thresholds,
             stale-destination checks and commit-reveal protections still apply.
           </p>
         </section>
@@ -47,8 +47,26 @@ export default function Page() {
             to fit its shared 256-UID budget; successful switching also clamps configured capacity.
             Pruning is an explicit owner action, with at most 64 UID deletions per transaction.
             Owners repeat the same target until completion; pending weight commits are cancelled
-            before UID compaction. Returning to Yuma restores the previous validator limit,
-            clamped to the remaining capacity.
+            before UID compaction. Returning to Yuma restores the previous validator limit, clamped
+            to the remaining capacity.
+          </p>
+        </section>
+        <section className={styles.section}>
+          <h2 className={styles.subtitle}>Registration without upfront TAO</h2>
+          <p>
+            Owners can enable proof-of-work registration on non-root subnets, including large Null
+            subnets. The SDK mines a recent challenge and the CLI exposes it through
+            <code>btcli subnets register --netuid 1 --pow</code>. A direct, zero-tip proof
+            registration pays no transaction fee, TAO burn or initial collateral purchase. Burn
+            registration remains available. PoW defaults to disabled for new subnets; previously
+            stored explicit toggles are retained. It retains per-block registration limits, pruning
+            and immunity protections.
+          </p>
+          <p>
+            Proofs bind the subnet and both keys, expire after two subsequent blocks, and cannot
+            reuse an accepted challenge for the same hotkey. New hotkey associations respect a
+            256-entry coldkey ownership and staking work limit; existing associations can register
+            on additional subnets. Root registration remains separate.
           </p>
         </section>
         <section className={styles.section}>
@@ -61,11 +79,11 @@ export default function Page() {
             exceed their epoch budget. Fractional entitlements are not carried to later epochs.
           </p>
           <p>
-            Null timelocked ciphertexts can be up to 32 KiB divided by the mechanism count,
-            leaving room above a full row at the corresponding UID ceiling. Queues share byte and
-            count limits across mechanisms, replace a hotkey’s own pending row, and allow the
-            leading eligible validator to displace lower-priority commits. Mode changes wait for
-            pending commits to drain. Yuma retains its 5,000-byte admission limit.
+            Null timelocked ciphertexts can be up to 32 KiB divided by the mechanism count, leaving
+            room above a full row at the corresponding UID ceiling. Queues share byte and count
+            limits across mechanisms, replace a hotkey’s own pending row, and allow the leading
+            eligible validator to displace lower-priority commits. Mode changes wait for pending
+            commits to drain. Yuma retains its 5,000-byte admission limit.
           </p>
           <pre className={styles.code_block}>{`# Subnet owner: switch, then raise capacity
 btcli hparams set --netuid 1 --name epoch_consensus --value Null

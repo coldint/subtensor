@@ -56,6 +56,7 @@
     "move-lock",
     "move-stake",
     "move-swap-stake",
+    "pow-register",
     "register-leased-network",
     "register-subnet",
     "remove-stake",

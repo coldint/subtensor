@@ -18,6 +18,9 @@
     "dissolve_network",
     "root_dissolve_network",
     "set_mechanism_weights_null",
-    "reveal_mechanism_weights_null"
+    "reveal_mechanism_weights_null",
+    "pow_register",
+    "check_pow_registration",
+    "sudo_set_network_pow_registration_allowed"
   ]
 }

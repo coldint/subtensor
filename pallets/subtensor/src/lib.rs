@@ -2419,7 +2419,13 @@ pub mod pallet {
     /// MAP ( netuid ) --> network_pow_allowed
     #[pallet::storage]
     pub type NetworkPowRegistrationAllowed<T: Config> =
-        StorageMap<_, Identity, NetUid, bool, ValueQuery, DefaultRegistrationAllowed<T>>;
+        StorageMap<_, Identity, NetUid, bool, ValueQuery>;
+
+    /// Last accepted PoW challenge block per hotkey. Keeping one watermark
+    /// prevents recent proof replay without an ever-growing used-seal list.
+    #[pallet::storage]
+    pub type LastPowRegistrationBlock<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, u64, OptionQuery>;
 
     /// MAP ( netuid ) --> block_created
     #[pallet::storage]
