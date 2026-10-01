@@ -102,7 +102,10 @@ loads only the elected validator's row, containing at most one entry per UID.
 Historical nonwinning rows are not read or decoded. Weight reads, masking and
 working memory therefore stay linear even if old dense rows remain in storage.
 Null skips quadratic bond updates and writes the ordinary output vectors and
-payouts. The shared interface still uses ordered account maps, so this does not
+payouts. For an existing staking pool owned entirely by the reward recipient,
+owner rewards increase the pool balance without rewriting ownership shares.
+Shared pools and first deposits keep the ordinary deposit accounting, and
+collateral capture and release still apply. The shared interface still uses ordered account maps, so this does not
 claim that every operation in the surrounding epoch pipeline is strictly linear.
 When a Null epoch is due, the existing scheduler runs at most one epoch in that
 block. Remaining due subnets are deferred; blocks with only Yuma epochs retain

@@ -815,12 +815,7 @@ impl<T: Config> Pallet<T> {
                 });
             }
 
-            Self::increase_stake_for_hotkey_and_coldkey_on_subnet(
-                &destination,
-                &owner,
-                netuid,
-                liquid,
-            );
+            Self::credit_epoch_owner_emission(&destination, &owner, netuid, liquid);
         }
 
         // Record the proportion of this tempo's miner emission that was withheld from
@@ -846,12 +841,7 @@ impl<T: Config> Pallet<T> {
             let liquid_take = take.saturating_sub(captured);
             if !liquid_take.is_zero() {
                 log::debug!("hotkey: {hotkey:?} alpha_take: {liquid_take:?}");
-                Self::increase_stake_for_hotkey_and_coldkey_on_subnet(
-                    &hotkey,
-                    &owner,
-                    netuid,
-                    liquid_take,
-                );
+                Self::credit_epoch_owner_emission(&hotkey, &owner, netuid, liquid_take);
             }
             let nominator_alpha: AlphaBalance = tou64!(nominator_divs).into();
             if !nominator_alpha.is_zero() {

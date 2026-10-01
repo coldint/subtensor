@@ -73,6 +73,11 @@ pub trait WeightInfo {
 	}
 
 	fn block_step() -> Weight;
+    /// Diagnostic sole-owner benchmark; never used as the hook's charge.
+    /// Reference generation supplies its result independently of the envelope.
+    fn block_step_null_sole_owner() -> Weight {
+        Self::block_step()
+    }
 	/// Legacy Yuma hook envelope, independently measured from large Null epochs.
 	fn block_step_yuma() -> Weight {
 		Self::block_step()

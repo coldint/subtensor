@@ -792,6 +792,34 @@ mod pallet_benchmarks {
     }
 
     #[benchmark]
+    fn block_step_null_sole_owner() {
+        setup_block_step_null_sole_owner_benchmark::<T>();
+        let netuid = NetUid::from(1);
+        let hotkey: T::AccountId = account("block_step_hot", 1, 128);
+        let coldkey: T::AccountId = account("block_step_cold", 1, 128);
+        let original_shares = AlphaV2::<T>::get((&hotkey, &coldkey, netuid));
+        let original_denominator = TotalHotkeySharesV2::<T>::get(&hotkey, netuid);
+        let original_stake = TotalHotkeyAlpha::<T>::get(&hotkey, netuid);
+
+        #[block]
+        {
+            assert_ok!(Subtensor::<T>::block_step());
+        }
+        assert_eq!(
+            AlphaV2::<T>::get((&hotkey, &coldkey, netuid)),
+            original_shares
+        );
+        assert_eq!(
+            TotalHotkeySharesV2::<T>::get(&hotkey, netuid),
+            original_denominator
+        );
+        assert!(TotalHotkeyAlpha::<T>::get(&hotkey, netuid) > original_stake);
+        assert!(!MinerCollateral::<T>::contains_key((
+            netuid, hotkey, coldkey
+        )));
+    }
+
+    #[benchmark]
     fn block_step_yuma() {
         setup_block_step_benchmark::<T>(false);
 

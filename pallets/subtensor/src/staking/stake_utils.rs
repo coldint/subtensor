@@ -635,6 +635,31 @@ impl<T: Config> Pallet<T> {
         alpha_share_pool.update_value_for_one(coldkey, amount);
     }
 
+    /// Credit a Null owner reward using an existing sole-owner pool when possible.
+    /// Shared pools, first deposits, legacy rows and missing staking associations
+    /// retain the general deposit path. Yuma accounting is unchanged.
+    pub(crate) fn credit_epoch_owner_emission(
+        hotkey: &T::AccountId,
+        coldkey: &T::AccountId,
+        netuid: NetUid,
+        amount: AlphaBalance,
+    ) {
+        if amount.is_zero() {
+            return;
+        }
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null
+            && !TotalHotkeyShares::<T>::contains_key(hotkey, netuid)
+            && !Alpha::<T>::contains_key((hotkey, coldkey, netuid))
+            && StakingHotkeys::<T>::get(coldkey).contains(hotkey)
+        {
+            let mut pool = Self::get_alpha_share_pool(hotkey.clone(), netuid);
+            if pool.try_credit_sole_member(coldkey, amount.to_u64()) {
+                return;
+            }
+        }
+        Self::increase_stake_for_hotkey_and_coldkey_on_subnet(hotkey, coldkey, netuid, amount);
+    }
+
     pub fn try_increase_stake_for_hotkey_and_coldkey_on_subnet(
         hotkey: &T::AccountId,
         netuid: NetUid,
@@ -1829,7 +1854,9 @@ impl<T: Config> SharePoolDataOperations<AlphaShareKey<T>>
             // Stamp the row with the pool's epoch so it stays readable until the pool is
             // next closed. Epoch 0 is the default: a never-closed pool has no stamped rows,
             // so nothing needs writing.
-            if pool_epoch != 0 {
+            if pool_epoch != 0
+                && AlphaShareEpoch::<T>::get((&self.hotkey, key, self.netuid)) != pool_epoch
+            {
                 AlphaShareEpoch::<T>::insert((&self.hotkey, key, self.netuid), pool_epoch);
             }
         } else {

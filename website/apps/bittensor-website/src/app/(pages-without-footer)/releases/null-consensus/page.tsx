@@ -32,7 +32,9 @@ export default function Page() {
           </p>
           <p>
             Null skips consensus and bond calculations and leaves bond storage unchanged. The epoch
-            and payout interfaces remain compatible. Existing submission stake thresholds,
+            and payout interfaces remain compatible. Rewards to an existing sole-owner staking
+            pool increase its balance without rewriting ownership shares; shared pools and
+            collateral retain their accounting protections. Existing submission stake thresholds,
             stale-destination checks and commit-reveal protections still apply.
           </p>
         </section>

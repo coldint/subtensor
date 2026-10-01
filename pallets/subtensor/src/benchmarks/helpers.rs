@@ -325,6 +325,15 @@ fn initialize_block_step_neuron_vectors<T: Config>(netuid: NetUid, count: u16) {
 /// ambient subnets remain at the legacy size. `MaxEpochsPerBlock` bounds both
 /// modes. Include collateral settlement for every epoch-due miner.
 pub(super) fn setup_block_step_benchmark<T: Config>(null_epochs: bool) {
+    setup_block_step_benchmark_impl::<T>(null_epochs, true);
+}
+
+/// Diagnostic common case; the hook is charged using the shared/collateral case.
+pub(super) fn setup_block_step_null_sole_owner_benchmark<T: Config>() {
+    setup_block_step_benchmark_impl::<T>(true, false);
+}
+
+fn setup_block_step_benchmark_impl<T: Config>(null_epochs: bool, expensive_pools: bool) {
     const MAINNET_SUBNETS: u16 = 128;
     const MAINNET_NEURONS_PER_SUBNET: u16 = 256;
     const MAINNET_VALIDATORS_PER_SUBNET: u16 = 128;
@@ -467,12 +476,28 @@ pub(super) fn setup_block_step_benchmark<T: Config>(null_epochs: bool) {
                 AlphaBalance::from(VALIDATOR_ALPHA_STAKE),
             );
 
+            if null_epochs && epoch_is_due_this_block && expensive_pools {
+                // The weight envelope must cover the general deposit fallback,
+                // not assume every miner qualifies for a sole-owner fast path.
+                let nominator: T::AccountId = account(
+                    "block_step_nominator",
+                    u32::from(subnet_index),
+                    u32::from(uid),
+                );
+                Subtensor::<T>::increase_stake_for_hotkey_and_coldkey_on_subnet(
+                    &hotkey,
+                    &nominator,
+                    netuid,
+                    AlphaBalance::from(VALIDATOR_ALPHA_STAKE),
+                );
+            }
+
             // Worst case for coinbase: every incentivized miner has standing
             // collateral that must be settled. Alternate below-floor capture
             // (stake write into the lock) and above-floor drain (release back
             // to free stake) so both settle branches are measured. Only seed
             // epoch-due subnets so ambient live state stays cheap.
-            if epoch_is_due_this_block {
+            if epoch_is_due_this_block && (!null_epochs || expensive_pools) {
                 let (locked, min_locked) = if uid % 2 == 0 {
                     (
                         AlphaBalance::from(VALIDATOR_ALPHA_STAKE / 4),
