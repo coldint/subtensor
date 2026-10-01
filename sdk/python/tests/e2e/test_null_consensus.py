@@ -78,7 +78,12 @@ async def test_null_yuma_null_emissions_via_python_sdk() -> None:
             assert len(values) == 3 and all(value > 0 for value in values)
             return values
 
+        yuma_validator_limit = await client.query(storage.MaxAllowedValidators, [netuid])
         await switch("Null")
+        assert (
+            await client.query(storage.SavedYumaMaxAllowedValidators, [netuid])
+            == yuma_validator_limit
+        )
         for miner in miners:
             await submit(
                 bt.calls.SubtensorModule.burned_register(
@@ -102,6 +107,8 @@ async def test_null_yuma_null_emissions_via_python_sdk() -> None:
         assert abs(first[1] - 3 * first[2]) <= 3
 
         await switch("Yuma")
+        assert await client.query(storage.MaxAllowedValidators, [netuid]) == yuma_validator_limit
+        assert await client.query(storage.SavedYumaMaxAllowedValidators, [netuid]) is None
         await epoch()
         await switch("Null")
         frozen = await client.query(storage.Bonds, [netuid, 0])
@@ -109,3 +116,15 @@ async def test_null_yuma_null_emissions_via_python_sdk() -> None:
         assert abs(final[1] - 3 * final[2]) <= 3
         assert await client.query(storage.Bonds, [netuid, 0]) == frozen
         assert await client.query(storage.Weights, [netuid, 0]) == [(1, 3), (2, 1)]
+
+        result = await client.execute_tool(
+            "trim_null_subnet_batch", {"netuid": netuid, "target": 64}, alice
+        )
+        assert result.success, result.message
+        assert await client.query(storage.SubnetworkN, [netuid]) == 3
+        assert await client.query(storage.MaxAllowedUids, [netuid]) == 64
+        assert await client.query(storage.NullPruningTarget, [netuid]) is None
+        await switch("Yuma")
+        assert await client.query(storage.MaxAllowedValidators, [netuid]) == min(
+            yuma_validator_limit, 64
+        )

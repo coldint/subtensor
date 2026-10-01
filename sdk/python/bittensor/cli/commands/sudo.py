@@ -14,6 +14,7 @@ from ...intents import (
     SetTake,
     StakeBurn,
     StartCall,
+    TrimNullSubnetBatch,
     TrimSubnet,
     UpdateSymbol,
 )
@@ -348,6 +349,23 @@ def trim_subnet(
     """
     app_ctx: AppContext = ctx_of(ctx)
     app_ctx.submit(TrimSubnet(netuid=netuid, max_n=max_n))
+
+
+@app.command("trim-null-batch", rich_help_panel=PANEL_SUBNETS)
+@with_tx_globals
+def trim_null_subnet_batch(
+    ctx: typer.Context,
+    netuid: int = typer.Option(..., "--netuid", help=TrimNullSubnetBatch.field_help("netuid")),
+    target: int = typer.Option(..., "--target", help=TrimNullSubnetBatch.field_help("target")),
+):
+    """Prune one bounded Null batch; repeat the same target until completion.
+
+    Each transaction can remove at most 64 UIDs. Commit cleanup may produce
+    a batch with no UID deletions. Check NullPruningTarget and SubnetworkN
+    after inclusion; a successful receipt alone does not mean pruning is done.
+    """
+    app_ctx: AppContext = ctx_of(ctx)
+    app_ctx.submit(TrimNullSubnetBatch(netuid=netuid, target=target))
 
 
 @app.command("stake-burn", rich_help_panel=PANEL_SUBNETS)

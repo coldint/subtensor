@@ -595,6 +595,7 @@ impl<T: Config> Pallet<T> {
     pub fn set_max_allowed_uids(netuid: NetUid, max_allowed: u16) {
         MaxAllowedUids::<T>::insert(netuid, max_allowed);
         Self::deposit_event(Event::MaxAllowedUidsSet(netuid, max_allowed));
+        NullPruningTarget::<T>::remove(netuid);
     }
 
     pub fn get_kappa(netuid: NetUid) -> u16 {

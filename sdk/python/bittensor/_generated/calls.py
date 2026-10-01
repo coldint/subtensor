@@ -1353,6 +1353,11 @@ class AdminUtils:
         return Call('AdminUtils', 'sudo_toggle_evm_precompile', {'precompile_id': precompile_id, 'enabled': enabled})
 
     @staticmethod
+    def sudo_trim_null_uids_batch(netuid: 'NetUid', target: 'u16') -> Call:
+        'Continue explicit Null pruning by at most 64 UID deletions. Every batch leaves the subnet usable. Only the same final target may continue the original operation without restarting its cooldown.'
+        return Call('AdminUtils', 'sudo_trim_null_uids_batch', {'netuid': netuid, 'target': target})
+
+    @staticmethod
     def sudo_trim_to_max_allowed_uids(netuid: 'NetUid', max_n: 'u16') -> Call:
         'Trims the maximum number of UIDs for a subnet.  The trimming is done by sorting the UIDs by emission descending and then trimming the lowest emitters while preserving temporally and owner immune UIDs. The UIDs are then compressed to the left and storage is migrated to the new compressed UIDs.'
         return Call('AdminUtils', 'sudo_trim_to_max_allowed_uids', {'netuid': netuid, 'max_n': max_n})

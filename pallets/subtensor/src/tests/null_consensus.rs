@@ -897,3 +897,189 @@ fn null_invalid_historical_row_does_not_affect_rewards() {
         assert_eq!(sp_io::storage::get(&key).unwrap().as_ref(), &[255]);
     });
 }
+
+fn setup_pruning_subnet(n: u16) -> NetUid {
+    let netuid = NetUid::from(1);
+    add_network_disable_commit_reveal(netuid, u16::MAX - 1, 0);
+    SubtensorModule::set_max_allowed_uids(netuid, n);
+    SubtensorModule::set_immunity_period(netuid, 0);
+    SubnetOwner::<Test>::insert(netuid, U256::from(10_000));
+    SubnetOwnerHotkey::<Test>::insert(netuid, U256::from(0));
+    for uid in 0..n {
+        let hotkey = U256::from(uid);
+        Owner::<Test>::insert(hotkey, U256::from(u64::from(uid).saturating_add(1_000)));
+        SubtensorModule::append_neuron(netuid, &hotkey, 0);
+    }
+    SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+        &U256::from(0),
+        &U256::from(1_000),
+        netuid,
+        1_000_000_000u64.into(),
+    );
+    Emission::<Test>::insert(
+        netuid,
+        (0..n)
+            .map(|uid| AlphaBalance::from(u64::from(uid)))
+            .collect::<Vec<_>>(),
+    );
+    System::set_block_number(10);
+    assert_ok!(SubtensorModule::do_set_epoch_consensus(
+        netuid,
+        EpochConsensus::Null
+    ));
+    netuid
+}
+
+#[test]
+fn null_bounded_pruning_compacts_only_tail_moves_and_finishes_target() {
+    use frame_support::assert_noop;
+    use sp_core::H256;
+    use std::collections::VecDeque;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup_pruning_subnet(192);
+        let index = NetUidStorageIndex::from(netuid);
+        for uid in 0..192u16 {
+            Weights::<Test>::insert(index, uid, vec![(1, 10), (129, 7), (65, 1)]);
+        }
+        Bonds::<Test>::insert(index, 0, vec![(129, 11)]);
+        WeightCommits::<Test>::insert(
+            index,
+            U256::from(0),
+            VecDeque::from([(H256::zero(), 0, 1, 0)]),
+        );
+        TimelockedWeightCommits::<Test>::insert(
+            index,
+            0,
+            VecDeque::from([(U256::from(0), 1, vec![1u8].try_into().unwrap(), 1000)]),
+        );
+        assert_noop!(
+            SubtensorModule::trim_to_max_allowed_uids(netuid, 64),
+            Error::<Test>::InvalidValue
+        );
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 64));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_eq!(MaxAllowedUids::<Test>::get(netuid), 128);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), Some(64));
+        assert_eq!(Keys::<Test>::get(netuid, 1), U256::from(128));
+        assert_eq!(Keys::<Test>::get(netuid, 64), U256::from(191));
+        assert_eq!(Keys::<Test>::get(netuid, 65), U256::from(65));
+        assert_eq!(Uids::<Test>::get(netuid, U256::from(128)), Some(1));
+        assert_eq!(Weights::<Test>::get(index, 0), vec![(2, 7), (65, 1)]);
+        assert_eq!(Weights::<Test>::iter_key_prefix(index).count(), 1);
+        assert_eq!(Bonds::<Test>::get(index, 0), vec![(2, 11)]);
+        assert!(
+            WeightCommits::<Test>::iter_key_prefix(index)
+                .next()
+                .is_none()
+        );
+        assert!(
+            TimelockedWeightCommits::<Test>::iter_key_prefix(index)
+                .next()
+                .is_none()
+        );
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 64));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 64);
+        assert_eq!(MaxAllowedUids::<Test>::get(netuid), 64);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), None);
+        assert_eq!(Weights::<Test>::get(index, 0), vec![(2, 7)]);
+        assert_eq!(Keys::<Test>::get(netuid, 1), U256::from(191));
+        assert_eq!(
+            ValidatorPermit::<Test>::get(netuid)
+                .iter()
+                .filter(|value| **value)
+                .count(),
+            1
+        );
+        for uid in 0..64u16 {
+            assert_eq!(
+                Uids::<Test>::get(netuid, Keys::<Test>::get(netuid, uid)),
+                Some(uid)
+            );
+        }
+        assert_ok!(SubtensorModule::do_set_epoch_consensus(
+            netuid,
+            EpochConsensus::Yuma
+        ));
+        assert_eq!(SubtensorModule::get_max_allowed_validators(netuid), 64);
+    });
+}
+
+#[test]
+fn null_pruning_checks_final_immunity_before_mutation() {
+    use frame_support::assert_noop;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup_pruning_subnet(192);
+        SubtensorModule::set_immunity_period(netuid, 100);
+        assert_noop!(
+            SubtensorModule::trim_null_uids_batch(netuid, 64),
+            Error::<Test>::TrimmingWouldExceedMaxImmunePercentage
+        );
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 192);
+        assert_eq!(MaxAllowedUids::<Test>::get(netuid), 192);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), None);
+    });
+}
+
+#[test]
+fn null_pruning_cancels_orphan_commits_in_bounded_cleanup_steps() {
+    use sp_core::H256;
+    use std::collections::VecDeque;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup_pruning_subnet(128);
+        let index = NetUidStorageIndex::from(netuid);
+        for uid in 0..4_097u16 {
+            WeightCommits::<Test>::insert(
+                index,
+                U256::from(uid),
+                VecDeque::from([(H256::zero(), 0, 1, 0)]),
+            );
+        }
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 64));
+        assert_eq!(WeightCommits::<Test>::iter_key_prefix(index).count(), 1);
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), Some(64));
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 64));
+        assert!(
+            WeightCommits::<Test>::iter_key_prefix(index)
+                .next()
+                .is_none()
+        );
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 64);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), None);
+    });
+}
+
+#[test]
+fn null_commit_cleanup_allows_mechanism_changes_without_deleting_uids() {
+    use frame_support::assert_noop;
+    use sp_core::H256;
+    use std::collections::VecDeque;
+    new_test_ext(1).execute_with(|| {
+        let netuid = setup_pruning_subnet(128);
+        let index = NetUidStorageIndex::from(netuid);
+        MaxMechanismCount::<Test>::put(MechId::from(16));
+        for uid in 0..4_097u16 {
+            WeightCommits::<Test>::insert(
+                index,
+                U256::from(uid),
+                VecDeque::from([(H256::zero(), 0, 1, 0)]),
+            );
+        }
+        assert_noop!(
+            SubtensorModule::do_set_mechanism_count(netuid, MechId::from(2)),
+            Error::<Test>::InvalidValue
+        );
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 128));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), Some(128));
+        assert_eq!(WeightCommits::<Test>::iter_key_prefix(index).count(), 1);
+        assert_ok!(SubtensorModule::trim_null_uids_batch(netuid, 128));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), None);
+        assert_ok!(SubtensorModule::do_set_mechanism_count(
+            netuid,
+            MechId::from(2)
+        ));
+        assert_eq!(MechanismCountCurrent::<Test>::get(netuid), MechId::from(2));
+    });
+}

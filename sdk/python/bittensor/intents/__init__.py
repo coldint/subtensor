@@ -32,6 +32,7 @@ from .evm import EvmWithdraw, FundEvmKey
 from .governance import (
     SetMechanismCount,
     StakeBurn,
+    TrimNullSubnetBatch,
     TrimSubnet,
     UpdateSymbol,
 )
@@ -172,6 +173,7 @@ __all__ = [
     "Transfer",
     "TransferAll",
     "TransferStake",
+    "TrimNullSubnetBatch",
     "TrimSubnet",
     "UnstakeAll",
     "UnstakeAllAlpha",

@@ -11,6 +11,8 @@
     "commit_timelocked_mechanism_weights_null",
     "commit_timelocked_weights_null",
     "sudo_trim_to_max_allowed_uids",
+    "sudo_trim_null_uids_batch",
+    "sudo_trim_null_uids_batch_many_mechanisms",
     "sudo_set_epoch_consensus",
     "sudo_set_mechanism_count",
     "dissolve_network",

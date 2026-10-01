@@ -45,16 +45,35 @@ the configured capacity. Reduce capacity first if the shared limit would be exce
 Switching to Null does not automatically increase capacity.
 
 Returning to Yuma requires the actual registered population to fit the Yuma ceiling.
-Use the existing owner trimming call to prune explicitly before switching. Switching
+Use bounded owner pruning to shrink explicitly before switching. Switching
 never silently deletes participants; once allowed, it also lowers configured capacity
 to the Yuma ceiling. The minimum allowed UIDs must fit the selected ceiling too.
 Owner authentication, admin windows and hyperparameter rate limits apply.
-Mode changes, and mechanism-count changes in Null, require pending timelocked
-commits to drain. If necessary, disable new commit-reveal submissions and wait for
-pending commits to reveal or expire before switching. Frozen bonds retain the last
+Entering Null saves the Yuma validator limit. Returning restores that limit,
+clamped to the remaining UID capacity; setting Null again does not overwrite it.
+
+```bash
+btcli hparams trim-null-batch --netuid 1 --target 256
+```
+
+Repeat this command with the same target until `NullPruningTarget` is absent
+and `SubnetworkN` is at most the target. Each transaction deletes at most 64
+UIDs. Pending weight commits are cancelled before survivor UIDs move; a large
+legacy commit backlog can require cleanup-only transactions. Continuations
+retain owner authorization and admin-window checks, while sharing the first
+transaction's trimming cooldown. Changing the target starts a new operation.
+The legacy atomic trimming call still works for Yuma; in Null it cannot delete
+more than one batch. A target equal to the current population can cancel
+queued commits without deleting participants.
+
+Mode changes require pending timelocked commits to drain. Mechanism-count
+changes in Null also require legacy hash commit queues to be empty. If necessary,
+disable new commit-reveal submissions and wait for pending commits to reveal or
+expire, or cancel them through bounded pruning before changing the mechanism
+count. Frozen bonds retain the last
 Yuma epoch's registration cutoff, so replaced miners cannot inherit old bonds.
-The mechanism-count call includes the storage cost of checking pending queues;
-its standard 100-byte fee baseline increases from 192,781 to 299,031 rao.
+The mechanism-count call charges for checking pending queues and removing
+historical state when the mechanism count is reduced.
 
 ## Exact integer weights
 
@@ -124,3 +143,9 @@ The Neuron precompile at `0x0804` adds `setMechanismWeightsV2` for rows up to
 released `setMechanismWeights` and timelocked selectors preserve their 4,096-entry
 and 5,000-byte input bounds. Existing selectors, types and addresses are unchanged.
 The SDK's vendored ABIs include the new functions.
+
+`trimNullUidsBatch(uint16,uint16)` performs one owner-authorized pruning batch.
+`getNullPruningState(uint16)` returns `(active, target, remaining)` with a zero
+target when inactive. `getNullPruningBatchSize()` reads the current runtime's
+deletion bound. `getSavedYumaValidatorLimit(uint16)` returns `(present, limit)`
+with a zero limit when absent. These are additive selectors at `0x0803`.

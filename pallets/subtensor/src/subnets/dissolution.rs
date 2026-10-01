@@ -348,6 +348,8 @@ impl<T: Config> Pallet<T> {
         BlocksSinceLastStep::<T>::remove(netuid);
         LastMechansimStepBlock::<T>::remove(netuid);
         LastYumaStepBlock::<T>::remove(netuid);
+        NullPruningTarget::<T>::remove(netuid);
+        SavedYumaMaxAllowedValidators::<T>::remove(netuid);
         LastAdjustmentBlock::<T>::remove(netuid);
         ServingRateLimit::<T>::remove(netuid);
         Rho::<T>::remove(netuid);

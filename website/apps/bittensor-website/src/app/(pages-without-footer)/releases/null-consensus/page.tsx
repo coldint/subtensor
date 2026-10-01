@@ -45,7 +45,10 @@ export default function Page() {
             mechanism, 2,048 with two, and 1,024 with four. Switching to Null preserves current
             capacity until the owner raises it. Returning to Yuma requires the registered population
             to fit its shared 256-UID budget; successful switching also clamps configured capacity.
-            Pruning is an explicit owner action.
+            Pruning is an explicit owner action, with at most 64 UID deletions per transaction.
+            Owners repeat the same target until completion; pending weight commits are cancelled
+            before UID compaction. Returning to Yuma restores the previous validator limit,
+            clamped to the remaining capacity.
           </p>
         </section>
         <section className={styles.section}>

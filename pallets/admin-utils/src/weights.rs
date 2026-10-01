@@ -98,6 +98,13 @@ pub trait WeightInfo {
 	fn sudo_set_owner_hparam_rate_limit() -> Weight;
 	fn sudo_set_owner_immune_neuron_limit() -> Weight;
 	fn sudo_trim_to_max_allowed_uids() -> Weight;
+    // Dedicated reference benchmark replaces this pre-release fallback before promotion.
+    fn sudo_trim_null_uids_batch() -> Weight {
+        Self::sudo_trim_to_max_allowed_uids()
+    }
+    fn sudo_trim_null_uids_batch_many_mechanisms() -> Weight {
+        Self::sudo_trim_to_max_allowed_uids()
+    }
 	fn sudo_set_min_non_immune_uids() -> Weight;
 	fn sudo_set_max_epochs_per_block() -> Weight;
 	fn sudo_set_adjustment_alpha() -> Weight;

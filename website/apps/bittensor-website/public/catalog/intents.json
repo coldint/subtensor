@@ -3160,36 +3160,36 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_increase_mult",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2338,
-        "end_line": 2376,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2336-L2376",
+        "line": 2373,
+        "end_line": 2411,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2371-L2411",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_burn_half_life",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2296,
-        "end_line": 2332,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2294-L2332",
+        "line": 2331,
+        "end_line": 2367,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2329-L2367",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_lock_share",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2462,
-        "end_line": 2495,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2460-L2495",
+        "line": 2497,
+        "end_line": 2530,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2495-L2530",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_collateral_drain_ratio",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2505,
-        "end_line": 2544,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2503-L2544",
+        "line": 2540,
+        "end_line": 2579,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2538-L2579",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
@@ -3313,18 +3313,18 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2382,
-        "end_line": 2400,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2380-L2400",
+        "line": 2417,
+        "end_line": 2435,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2415-L2435",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       },
       {
         "pallet": "AdminUtils",
         "call": "sudo_set_owner_cut_auto_lock_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2406,
-        "end_line": 2424,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2404-L2424",
+        "line": 2441,
+        "end_line": 2459,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2439-L2459",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -3693,9 +3693,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_set_subnet_emission_enabled",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2434,
-        "end_line": 2452,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2432-L2452",
+        "line": 2469,
+        "end_line": 2487,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2467-L2487",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]
@@ -4650,9 +4650,56 @@
     ]
   },
   {
+    "name": "trim_null_subnet_batch",
+    "summary": "Execute one bounded Null subnet pruning batch toward `target`.",
+    "description": "Execute one bounded Null subnet pruning batch toward `target`.\n\nCancels pending weight commits before moving UIDs, then removes at most\nthe runtime's batch size (currently 64). A large legacy commit backlog\ncan produce a cleanup-only batch. Read `NullPruningTarget` and\n`SubnetworkN` after inclusion: a successful transaction does not imply\nthe final target has been reached. Continue with the same target until\nthe pending target is absent. Each batch is owner-authorized and respects\nthe admin freeze window. Only the first batch starts the trimming cooldown;\nchanging the target is a new operation. Survivor UID values can change.",
+    "signer": "coldkey",
+    "origin": "subnet_owner",
+    "verify": null,
+    "wraps": [
+      [
+        "AdminUtils",
+        "sudo_trim_null_uids_batch"
+      ]
+    ],
+    "docs_url": "/docs/tx/trim-null-subnet-batch",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "netuid": {
+          "type": "integer",
+          "description": "Null subnet owned by the signer."
+        },
+        "target": {
+          "type": "integer",
+          "description": "Final UID count, shared by every continuation."
+        }
+      },
+      "required": [
+        "netuid",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "cli": "btcli tx trim-null-subnet-batch --netuid <int> --target <int>",
+    "python_class": "TrimNullSubnetBatch",
+    "markdown_url": "/llms.mdx/docs/tx/trim-null-subnet-batch/content.md",
+    "sources": [
+      {
+        "pallet": "AdminUtils",
+        "call": "sudo_trim_null_uids_batch",
+        "path": "pallets/admin-utils/src/lib.rs",
+        "line": 2085,
+        "end_line": 2109,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2083-L2109",
+        "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
+      }
+    ]
+  },
+  {
     "name": "trim_subnet",
     "summary": "Trim a subnet to at most `max_n` UIDs (subnet owner).",
-    "description": "Trim a subnet to at most `max_n` UIDs (subnet owner).\n\nLowers the subnet's UID capacity and immediately deregisters the\nlowest-emission neurons above the new limit \u2014 those miners lose their\nslots and would have to re-register (paying the burn cost) to return.\n`max_n` must be between the chain's minimum allowed UIDs (64) and the\nsubnet's current `max_allowed_uids`. Owner-immune and temporally\nimmune UIDs are skipped, and the call fails if immune UIDs would exceed\n80% of `max_n`. Surviving UIDs are renumbered consecutively from\nzero, so UID values change. Rate-limited to once per 216,000 blocks\n(30 days) and blocked during the end-of-epoch admin freeze window.\nOwner-only and disruptive to affected participants, so announce it\nbefore shrinking a live subnet. To simply cap future growth without\nevicting anyone, set the `max_allowed_uids` hyperparameter to a value\nat or above the current UID count instead.",
+    "description": "Trim a subnet to at most `max_n` UIDs (subnet owner).\n\nLowers the subnet's UID capacity and immediately deregisters the\nlowest-emission neurons above the new limit \u2014 those miners lose their\nslots and would have to re-register (paying the burn cost) to return.\n`max_n` must be between the chain's minimum allowed UIDs (64) and the\nsubnet's current `max_allowed_uids`. Owner-immune and temporally\nimmune UIDs are skipped, and the call fails if immune UIDs would exceed\n80% of `max_n`. Surviving UIDs are renumbered consecutively from\nzero, so UID values change. Rate-limited to once per 216,000 blocks\n(30 days) and blocked during the end-of-epoch admin freeze window.\nOwner-only and disruptive to affected participants, so announce it\nbefore shrinking a live subnet. To simply cap future growth without\nevicting anyone, set the `max_allowed_uids` hyperparameter to a value\nat or above the current UID count instead.\n\nFor Null consensus, this legacy atomic operation can remove at most one\npruning batch. Use `TrimNullSubnetBatch` repeatedly for a larger shrink.",
     "signer": "coldkey",
     "origin": "subnet_owner",
     "verify": null,
@@ -4689,9 +4736,9 @@
         "pallet": "AdminUtils",
         "call": "sudo_trim_to_max_allowed_uids",
         "path": "pallets/admin-utils/src/lib.rs",
-        "line": 2054,
-        "end_line": 2074,
-        "url": "/code/pallets/admin-utils/src/lib.rs#L2052-L2074",
+        "line": 2058,
+        "end_line": 2078,
+        "url": "/code/pallets/admin-utils/src/lib.rs#L2052-L2078",
         "raw_url": "/code/raw/pallets/admin-utils/src/lib.rs"
       }
     ]

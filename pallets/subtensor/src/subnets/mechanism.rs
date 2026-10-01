@@ -159,7 +159,11 @@ impl<T: Config> Pallet<T> {
         {
             LastYumaStepBlock::<T>::insert(netuid, LastMechansimStepBlock::<T>::get(netuid));
         }
-        if mode == EpochConsensus::Null {
+        if mode == EpochConsensus::Null && mode != Self::get_epoch_consensus(netuid) {
+            SavedYumaMaxAllowedValidators::<T>::insert(
+                netuid,
+                Self::get_max_allowed_validators(netuid),
+            );
             Self::set_max_allowed_validators(netuid, 1);
             let (stakes, _, _) = Self::get_stake_weights_for_network(netuid);
             let winner = Self::null_validator_winner(&stakes);
@@ -169,6 +173,16 @@ impl<T: Config> Pallet<T> {
                     .map(|uid| Some(uid) == winner)
                     .collect::<Vec<_>>(),
             );
+        }
+        if mode != Self::get_epoch_consensus(netuid) {
+            NullPruningTarget::<T>::remove(netuid);
+            if mode == EpochConsensus::Yuma {
+                let restored = SavedYumaMaxAllowedValidators::<T>::take(netuid)
+                    .unwrap_or_else(DefaultMaxAllowedValidators::<T>::get)
+                    .min(Self::get_max_allowed_uids(netuid));
+                MaxAllowedValidators::<T>::insert(netuid, restored);
+                Self::deposit_event(Event::MaxAllowedValidatorsSet(netuid, restored));
+            }
         }
         Self::set_epoch_consensus(netuid, mode);
         Ok(())
@@ -194,6 +208,12 @@ impl<T: Config> Pallet<T> {
                     TimelockedWeightCommits::<T>::iter_key_prefix(index)
                         .next()
                         .is_none(),
+                    Error::<T>::InvalidValue
+                );
+                // Legacy hash commits can outlive UID churn. Do not clear an
+                // unbounded orphan prefix inside the mechanism-count setter.
+                ensure!(
+                    WeightCommits::<T>::iter_key_prefix(index).next().is_none(),
                     Error::<T>::InvalidValue
                 );
             }

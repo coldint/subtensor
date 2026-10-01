@@ -206,6 +206,8 @@ class SubtensorModule:
     BlocksSinceLastStep = Item('SubtensorModule', 'BlocksSinceLastStep', 'u64')
     LastMechansimStepBlock = Item('SubtensorModule', 'LastMechansimStepBlock', 'u64')
     LastYumaStepBlock = Item('SubtensorModule', 'LastYumaStepBlock', 'u64')
+    NullPruningTarget = Item('SubtensorModule', 'NullPruningTarget', 'u16')
+    SavedYumaMaxAllowedValidators = Item('SubtensorModule', 'SavedYumaMaxAllowedValidators', 'u16')
     SubnetOwner = Item('SubtensorModule', 'SubnetOwner', 'AccountId32')
     SubnetOwnerHotkey = Item('SubtensorModule', 'SubnetOwnerHotkey', 'AccountId32')
     RecycleOrBurn = Item('SubtensorModule', 'RecycleOrBurn', 'RecycleOrBurnEnum')

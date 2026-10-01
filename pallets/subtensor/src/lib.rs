@@ -2486,6 +2486,14 @@ pub mod pallet {
     #[pallet::storage]
     pub type LastYumaStepBlock<T> = StorageMap<_, Identity, NetUid, u64, OptionQuery>;
 
+    /// Explicit Null pruning continuation. Every completed batch leaves a usable subnet.
+    #[pallet::storage]
+    pub type NullPruningTarget<T> = StorageMap<_, Identity, NetUid, u16, OptionQuery>;
+
+    /// Restore the Yuma validator capacity when leaving sole-permit Null mode.
+    #[pallet::storage]
+    pub type SavedYumaMaxAllowedValidators<T> = StorageMap<_, Identity, NetUid, u16, OptionQuery>;
+
     /// MAP ( netuid ) --> subnet_owner
     #[pallet::storage]
     pub type SubnetOwner<T: Config> =

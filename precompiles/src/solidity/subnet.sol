@@ -301,6 +301,20 @@ interface ISubnet {
     ) external;
     function setTempo(uint16 netuid, uint16 tempo) external;
     function trimToMaxAllowedUids(uint16 netuid, uint16 maxUids) external;
+
+    /// @notice Remove at most the current runtime's pruning batch size toward target.
+    /// Pending weight commits are cancelled before UID compaction. Repeat until
+    /// getNullPruningState reports inactive; every batch requires owner authorization.
+    function trimNullUidsBatch(uint16 netuid, uint16 target) external;
+
+    /// @notice Active target, target UID count (zero when inactive), and populated UIDs.
+    function getNullPruningState(uint16 netuid) external view returns (bool active, uint16 target, uint16 remaining);
+
+    /// @notice Maximum UID deletions in one explicit Null pruning transaction.
+    function getNullPruningBatchSize() external view returns (uint16);
+
+    /// @notice Whether a Yuma validator limit is saved, and its value (zero when absent).
+    function getSavedYumaValidatorLimit(uint16 netuid) external view returns (bool present, uint16 limit);
     function getSubnetMetadata(
         uint16 netuid
     )

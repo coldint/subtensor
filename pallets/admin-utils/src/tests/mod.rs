@@ -4021,3 +4021,99 @@ fn null_consensus_owner_switch_trim_and_emission_vector() {
         );
     });
 }
+
+#[test]
+fn null_pruning_continuation_preserves_owner_auth_and_original_cooldown() {
+    new_test_ext().execute_with(|| {
+        let netuid = NetUid::from(1);
+        let owner = U256::from(9_999);
+        add_network(netuid, u16::MAX - 1);
+        SubnetOwner::<Test>::insert(netuid, owner);
+        SubtensorModule::set_admin_freeze_window(0);
+        SubtensorModule::set_immunity_period(netuid, 0);
+        SubtensorModule::set_max_allowed_uids(netuid, 192);
+        for uid in 0..192u16 {
+            SubtensorModule::append_neuron(netuid, &U256::from(uid), 0);
+        }
+        SubtensorModule::set_max_allowed_validators(netuid, 123);
+        assert_ok!(AdminUtils::sudo_set_epoch_consensus(
+            RuntimeOrigin::root(),
+            netuid,
+            EpochConsensus::Null,
+        ));
+        assert_eq!(
+            SavedYumaMaxAllowedValidators::<Test>::get(netuid),
+            Some(123)
+        );
+        System::set_block_number(100);
+        assert_ok!(AdminUtils::sudo_trim_null_uids_batch(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            64,
+        ));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), Some(64));
+        assert!(
+            AdminUtils::sudo_trim_null_uids_batch(
+                RuntimeOrigin::signed(U256::from(55_555)),
+                netuid,
+                64,
+            )
+            .is_err()
+        );
+        assert_noop!(
+            AdminUtils::sudo_trim_null_uids_batch(RuntimeOrigin::signed(owner), netuid, 65,),
+            SubtensorError::<Test>::TxRateLimitExceeded
+        );
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 128);
+        assert_ok!(AdminUtils::sudo_trim_null_uids_batch(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            64,
+        ));
+        assert_eq!(SubnetworkN::<Test>::get(netuid), 64);
+        assert_eq!(NullPruningTarget::<Test>::get(netuid), None);
+        assert_noop!(
+            AdminUtils::sudo_trim_null_uids_batch(RuntimeOrigin::signed(owner), netuid, 64,),
+            SubtensorError::<Test>::TxRateLimitExceeded
+        );
+        assert_ok!(AdminUtils::sudo_set_epoch_consensus(
+            RuntimeOrigin::root(),
+            netuid,
+            EpochConsensus::Yuma,
+        ));
+        assert_eq!(SavedYumaMaxAllowedValidators::<Test>::get(netuid), None);
+        assert_eq!(SubtensorModule::get_max_allowed_validators(netuid), 64);
+    });
+}
+
+#[test]
+fn null_repeated_mode_setting_preserves_saved_yuma_validator_limit() {
+    new_test_ext().execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, u16::MAX - 1);
+        SubtensorModule::set_admin_freeze_window(0);
+        SubtensorModule::set_max_allowed_validators(netuid, 123);
+        assert_ok!(AdminUtils::sudo_set_epoch_consensus(
+            RuntimeOrigin::root(),
+            netuid,
+            EpochConsensus::Null
+        ));
+        assert_ok!(AdminUtils::sudo_set_epoch_consensus(
+            RuntimeOrigin::root(),
+            netuid,
+            EpochConsensus::Null
+        ));
+        assert_eq!(
+            SavedYumaMaxAllowedValidators::<Test>::get(netuid),
+            Some(123)
+        );
+        assert_ok!(AdminUtils::sudo_set_epoch_consensus(
+            RuntimeOrigin::root(),
+            netuid,
+            EpochConsensus::Yuma
+        ));
+        assert_eq!(SubtensorModule::get_max_allowed_validators(netuid), 123);
+        assert_eq!(SavedYumaMaxAllowedValidators::<Test>::get(netuid), None);
+    });
+}

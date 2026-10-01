@@ -1836,5 +1836,89 @@
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getNullPruningBatchSize",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "netuid",
+        "type": "uint16"
+      }
+    ],
+    "name": "getNullPruningState",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "active",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint16",
+        "name": "target",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "remaining",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "netuid",
+        "type": "uint16"
+      }
+    ],
+    "name": "getSavedYumaValidatorLimit",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "present",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint16",
+        "name": "limit",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "netuid",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "target",
+        "type": "uint16"
+      }
+    ],
+    "name": "trimNullUidsBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ]

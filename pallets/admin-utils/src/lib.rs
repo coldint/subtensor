@@ -2050,7 +2050,11 @@ pub mod pallet {
         /// the lowest emitters while preserving temporally and owner immune UIDs. The UIDs are
         /// then compressed to the left and storage is migrated to the new compressed UIDs.
         #[pallet::call_index(78)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::sudo_trim_to_max_allowed_uids())]
+        #[pallet::weight(if pallet_subtensor::Pallet::<T>::get_epoch_consensus(*netuid) == pallet_subtensor::EpochConsensus::Null {
+            <T as pallet::Config>::WeightInfo::sudo_trim_null_uids_batch().max(<T as pallet::Config>::WeightInfo::sudo_trim_null_uids_batch_many_mechanisms())
+        } else {
+            <T as pallet::Config>::WeightInfo::sudo_trim_to_max_allowed_uids()
+        }.saturating_add(T::DbWeight::get().reads(1)))]
         pub fn sudo_trim_to_max_allowed_uids(
             origin: OriginFor<T>,
             netuid: NetUid,
@@ -2070,6 +2074,37 @@ pub mod pallet {
                 netuid,
                 &[TransactionType::MaxUidsTrimming],
             );
+            Ok(())
+        }
+
+        /// Continue explicit Null pruning by at most 64 UID deletions. Every
+        /// batch leaves the subnet usable. Only the same final target may
+        /// continue the original operation without restarting its cooldown.
+        #[pallet::call_index(112)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::sudo_trim_null_uids_batch().max(<T as pallet::Config>::WeightInfo::sudo_trim_null_uids_batch_many_mechanisms()))]
+        pub fn sudo_trim_null_uids_batch(
+            origin: OriginFor<T>,
+            netuid: NetUid,
+            target: u16,
+        ) -> DispatchResult {
+            let continuing = pallet_subtensor::NullPruningTarget::<T>::get(netuid) == Some(target);
+            let limits: &[TransactionType] = if continuing {
+                &[]
+            } else {
+                &[TransactionType::MaxUidsTrimming]
+            };
+            let maybe_owner = pallet_subtensor::Pallet::<T>::ensure_sn_owner_or_root_with_limits(
+                origin, netuid, limits,
+            )?;
+            pallet_subtensor::Pallet::<T>::ensure_admin_window_open(netuid)?;
+            pallet_subtensor::Pallet::<T>::trim_null_uids_batch(netuid, target)?;
+            if !continuing {
+                pallet_subtensor::Pallet::<T>::record_owner_rl(
+                    maybe_owner,
+                    netuid,
+                    &[TransactionType::MaxUidsTrimming],
+                );
+            }
             Ok(())
         }
 

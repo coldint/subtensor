@@ -128,6 +128,7 @@ INTENT_SAMPLES: dict[str, dict] = {
     "set_identity": {"name": "verify"},
     "set_subnet_identity": {"netuid": 1, "subnet_name": "verify"},
     "trim_subnet": {"netuid": 1, "max_n": 64},
+    "trim_null_subnet_batch": {"netuid": 1, "target": 64},
     "update_symbol": {"netuid": 1, "symbol": "β"},
     "set_mechanism_count": {"netuid": 1, "mechanism_count": 2},
     "register_leased_network": {"emissions_share": 20, "end_block": 10**9},

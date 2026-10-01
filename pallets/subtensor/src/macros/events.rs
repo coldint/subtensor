@@ -881,5 +881,18 @@ mod events {
         },
         /// The subnet owner or root selected a new epoch reward algorithm.
         EpochConsensusSet(NetUid, EpochConsensus),
+        /// A bounded explicit pruning step either cancelled queued weights or removed UIDs.
+        NullUidsPruningProgress {
+            /// Subnet being explicitly pruned.
+            netuid: NetUid,
+            /// Owner's final UID capacity target.
+            target: u16,
+            /// Registered UIDs after this step.
+            remaining: u16,
+            /// UIDs deregistered in this step, at most the pruning batch size.
+            removed: u16,
+            /// Pending pre-compaction commits cancelled in this step.
+            cleared_commits: u32,
+        },
     }
 }

@@ -1181,6 +1181,56 @@ where
         )
     }
 
+    /// Execute one bounded pruning batch as the mapped subnet owner.
+    #[precompile::public("trimNullUidsBatch(uint16,uint16)")]
+    fn trim_null_uids_batch(
+        handle: &mut impl PrecompileHandle,
+        netuid: u16,
+        target: u16,
+    ) -> EvmResult<()> {
+        dispatch_admin(
+            handle,
+            pallet_admin_utils::Call::<R>::sudo_trim_null_uids_batch {
+                netuid: netuid.into(),
+                target,
+            },
+        )
+    }
+
+    /// Absence is explicit; a completed pruning operation has no target.
+    #[precompile::public("getNullPruningState(uint16)")]
+    #[precompile::view]
+    fn get_null_pruning_state(
+        handle: &mut impl PrecompileHandle,
+        netuid: u16,
+    ) -> EvmResult<(bool, u16, u16)> {
+        handle.record_db_reads::<R>(2)?;
+        let netuid = NetUid::from(netuid);
+        let target = pallet_subtensor::NullPruningTarget::<R>::get(netuid);
+        Ok((
+            target.is_some(),
+            target.unwrap_or_default(),
+            pallet_subtensor::SubnetworkN::<R>::get(netuid),
+        ))
+    }
+
+    #[precompile::public("getNullPruningBatchSize()")]
+    #[precompile::view]
+    fn get_null_pruning_batch_size(_handle: &mut impl PrecompileHandle) -> EvmResult<u16> {
+        Ok(pallet_subtensor::subnets::uids::NULL_PRUNING_BATCH)
+    }
+
+    #[precompile::public("getSavedYumaValidatorLimit(uint16)")]
+    #[precompile::view]
+    fn get_saved_yuma_validator_limit(
+        handle: &mut impl PrecompileHandle,
+        netuid: u16,
+    ) -> EvmResult<(bool, u16)> {
+        handle.record_db_reads::<R>(1)?;
+        let limit = pallet_subtensor::SavedYumaMaxAllowedValidators::<R>::get(NetUid::from(netuid));
+        Ok((limit.is_some(), limit.unwrap_or_default()))
+    }
+
     #[precompile::public("getSubnetMetadata(uint16)")]
     #[precompile::view]
     fn get_subnet_metadata(
@@ -2319,6 +2369,94 @@ mod tests {
                 pallet_subtensor::Pallet::<Runtime>::get_epoch_consensus(netuid),
                 pallet_subtensor::EpochConsensus::Null
             );
+        });
+    }
+
+    #[test]
+    fn null_pruning_batches_preserve_authorization_and_report_completion() {
+        new_test_ext().execute_with(|| {
+            let caller = addr_from_index(0x5010);
+            let netuid = setup_owner_subnet(caller);
+            let address = addr_from_index(SubnetPrecompile::<Runtime>::INDEX);
+            let precompiles = precompiles::<SubnetPrecompile<Runtime>>();
+            pallet_subtensor::ImmunityPeriod::<Runtime>::insert(netuid, 0);
+            frame_system::Pallet::<Runtime>::set_block_number(10);
+            for uid in 0..192u16 {
+                let hotkey = mapped_account(addr_from_index(u64::from(uid) + 0x6000));
+                pallet_subtensor::Pallet::<Runtime>::append_neuron(netuid, &hotkey, 0);
+            }
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("setEpochConsensus(uint16,uint8)"),
+                        (TEST_NETUID_U16, 1u8),
+                    ),
+                )
+                .execute_returns(());
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(selector_u32("getNullPruningBatchSize()"), ()),
+                )
+                .with_static_call(true)
+                .execute_returns(pallet_subtensor::subnets::uids::NULL_PRUNING_BATCH);
+            let input = encode_with_selector(
+                selector_u32("trimNullUidsBatch(uint16,uint16)"),
+                (TEST_NETUID_U16, 64u16),
+            );
+            // The legacy selector must remain atomic; it cannot silently settle one batch.
+            let legacy = execute_precompile(
+                &precompiles,
+                address,
+                caller,
+                encode_with_selector(
+                    selector_u32("trimToMaxAllowedUids(uint16,uint16)"),
+                    (TEST_NETUID_U16, 64u16),
+                ),
+                U256::zero(),
+            );
+            assert!(matches!(legacy, Some(Err(_))));
+            assert_eq!(pallet_subtensor::SubnetworkN::<Runtime>::get(netuid), 192);
+            precompiles
+                .prepare_test(caller, address, input.clone())
+                .execute_returns(());
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("getNullPruningState(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns((true, 64u16, 128u16));
+            let rejected = execute_precompile(
+                &precompiles,
+                address,
+                addr_from_index(0x5011),
+                input.clone(),
+                U256::zero(),
+            );
+            assert!(matches!(rejected, Some(Err(_))));
+            assert_eq!(pallet_subtensor::SubnetworkN::<Runtime>::get(netuid), 128);
+            precompiles
+                .prepare_test(caller, address, input)
+                .execute_returns(());
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("getNullPruningState(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns((false, 0u16, 64u16));
         });
     }
 }
