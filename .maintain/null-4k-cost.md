@@ -63,3 +63,9 @@ retaining them in the cache. Cache memory is bounded by the population. This
 reduces repeated host reads and fixed-point work; benchmark database counters
 can already coalesce repeated accesses, so no charged-weight reduction is
 claimed until fresh reference measurements complete.
+
+The release capacity was reduced to a shared 2,500 UIDs on 2026-10-01 at the
+owner's request. The 4,096-UID figures above remain historical measurements,
+not measurements of the reduced limit. Payouts remain atomic; further accounting
+optimizations are deferred. Fresh reference measurements and review findings
+remain visible before deployment.

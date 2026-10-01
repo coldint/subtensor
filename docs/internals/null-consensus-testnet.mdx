@@ -29,7 +29,7 @@ for each case. Use the normal SDK and CLI submission paths wherever applicable.
 | Area | Checks |
 | --- | --- |
 | Defaults and access | Existing subnets remain Yuma; root rejects Null; owners can switch their subnet; unrelated callers fail. |
-| Shared capacity | One, two and four mechanisms allow 4,096, 2,048 and 1,024 UIDs respectively. Reject each next UID/capacity and incompatible mechanism-count changes. |
+| Shared capacity | One, two and four mechanisms allow 2,500, 1,250 and 625 UIDs respectively. Reject each next UID/capacity and incompatible mechanism-count changes. |
 | Return to Yuma | Reject switching above the existing Yuma population ceiling; explicitly prune first; verify UID and weight remapping, then switch and check capacity clamping. |
 | Winner | Highest raw stake wins the sole permit; UID order breaks ties; nonpermit UIDs cannot submit, commit or reveal even as owner or self-weight sender; all positive stake receives dividends including inactive nonpermit UIDs. |
 | Empty weights | Empty or fully masked winner rows split miner emission over every registered UID. Zero eligible stake uses the documented fallback without allocating or recycling the same root units twice. |

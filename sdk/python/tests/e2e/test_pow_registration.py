@@ -52,11 +52,11 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
         assert result.success, result.message
         result = await client.execute_tool(
             "set_hyperparameter",
-            {"netuid": netuid, "name": "max_allowed_uids", "value": 4096},
+            {"netuid": netuid, "name": "max_allowed_uids", "value": 2500},
             alice,
         )
         assert result.success, result.message
-        assert await client.query(st.MaxAllowedUids, [netuid]) == 4096
+        assert await client.query(st.MaxAllowedUids, [netuid]) == 2500
         coldkey = newcomer.coldkey.ss58_address
         hotkey = newcomer.hotkey.ss58_address
         account = await client.query(bt.storage.System.Account, [coldkey])

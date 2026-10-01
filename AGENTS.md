@@ -99,3 +99,13 @@ unapproved third-party action merely to make a workflow pass.
 Do not start clone/regression workflows, dependency audits, or benchmark
 generation as routine preflight; `scripts/preflight.sh` already runs what CI
 requires.
+
+## Null release exception (2026-10-01)
+
+For PR #3206, the owner explicitly chose a shared Null capacity of 2,500 UIDs
+(divided by emission mechanism count) and accepted Skeptic as the sole allowed
+non-green review check. Keep its result and findings visible; do not suppress
+the check or describe it as passed. All other CI checks and the mandatory local
+preflight/pre-push gate must pass. Further reward-accounting optimizations are
+deferred; payouts remain atomic. This exception does not supply measured weights
+or establish that deployment resource limits have passed.

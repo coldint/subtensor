@@ -11,8 +11,8 @@ from bittensor.result import BittensorError
 
 
 def test_raw_full_row_preserves_small_weights():
-    uids = list(range(4_096))
-    values = [65_534] + [1] * 4_095
+    uids = list(range(2_500))
+    values = [65_534] + [1] * 2_499
     assert _conform(uids, values, _Preflight(0, False, 1, 65_535), 1, True) == (uids, values)
 
 
@@ -39,7 +39,7 @@ async def test_raw_requires_null_consensus():
 
 
 def test_cli_full_row_file(tmp_path):
-    data = {str(uid): 1 for uid in range(4_096)}
+    data = {str(uid): 1 for uid in range(2_500)}
     data["0"] = 65_534
     path = tmp_path / "weights.json"
     path.write_text(json.dumps(data))
@@ -71,7 +71,7 @@ async def test_full_row_intent_composes_exact_values(monkeypatch, commit_reveal)
     substrate.seed_default("SubtensorModule", "SubnetEpochConsensus", "Null")
     substrate.seed_default("SubtensorModule", "ValidatorPermit", [True])
     substrate.seed_default("SubtensorModule", "CommitRevealWeightsEnabled", commit_reveal)
-    values = [65_534] + [1] * 4_095
+    values = [65_534] + [1] * 2_499
     encrypted = []
 
     def encrypt(**kwargs):
@@ -79,12 +79,12 @@ async def test_full_row_intent_composes_exact_values(monkeypatch, commit_reveal)
         return bytes(17_000), 1_000
 
     monkeypatch.setattr("bittensor.intents.weights._core.get_encrypted_commit_v2", encrypt)
-    built = await SetWeights(netuid=1, uids=list(range(4_096)), weights=values, raw_u16=True).build(
+    built = await SetWeights(netuid=1, uids=list(range(2_500)), weights=values, raw_u16=True).build(
         substrate, dev_wallet()
     )
     if commit_reveal:
         assert encrypted[0]["weights"] == values
-        assert encrypted[0]["uids"] == list(range(4_096))
+        assert encrypted[0]["uids"] == list(range(2_500))
         assert built.call.function == "commit_timelocked_mechanism_weights"
         assert len(built.call.params["commit"]) == 17_000
     else:

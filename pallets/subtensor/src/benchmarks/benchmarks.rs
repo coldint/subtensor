@@ -2825,7 +2825,7 @@ mod pallet_benchmarks {
     }
 
     #[benchmark]
-    fn set_mechanism_weights_null(n: Linear<1, 4096>) {
+    fn set_mechanism_weights_null(n: Linear<1, 2500>) {
         let (netuid, hotkey, uids, values, _) = setup_null_weight_benchmark::<T>(n);
         Subtensor::<T>::set_commit_reveal_weights_enabled(netuid, false);
         #[extrinsic_call]
@@ -2840,7 +2840,7 @@ mod pallet_benchmarks {
     }
 
     #[benchmark]
-    fn reveal_mechanism_weights_null(n: Linear<1, 4096>) {
+    fn reveal_mechanism_weights_null(n: Linear<1, 2500>) {
         let (netuid, hotkey, uids, values, salt) = setup_null_weight_benchmark::<T>(n);
         Subtensor::<T>::set_commit_reveal_weights_enabled(netuid, true);
         let period = core::cmp::max(MIN_COMMIT_REVEAL_PEROIDS, 1_u64);

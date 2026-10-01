@@ -36,10 +36,10 @@ fractions remain quantized and do not feed back into actual reward amounts.
 
 ```bash
 btcli hparams set --netuid 1 --name epoch_consensus --value Null
-btcli hparams set --netuid 1 --name max_allowed_uids --value 4096
+btcli hparams set --netuid 1 --name max_allowed_uids --value 2500
 ```
 
-Capacity is `floor(4096 / mechanism_count)` for Null, and
+Capacity is `floor(2500 / mechanism_count)` for Null, and
 `floor(256 / mechanism_count)` for Yuma. Increasing the mechanism count also checks
 the configured capacity. Reduce capacity first if the shared limit would be exceeded.
 Switching to Null does not automatically increase capacity.
@@ -156,7 +156,7 @@ The setter dispatches with the mapped caller's signed origin and enforces the
 same owner, rate, window and population checks as the normal extrinsic.
 
 The Neuron precompile at `0x0804` adds `setMechanismWeightsV2` for rows up to
-4,096 entries and `commitTimelockedMechanismWeightsV2` for ciphertexts up to
+2,500 entries and `commitTimelockedMechanismWeightsV2` for ciphertexts up to
 32 KiB. The runtime still applies the selected subnet mode's limits. The
 released `setMechanismWeights` and timelocked selectors preserve their 4,096-entry
 and 5,000-byte input bounds. Existing selectors, types and addresses are unchanged.

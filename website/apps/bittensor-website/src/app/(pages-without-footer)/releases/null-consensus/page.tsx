@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: 'Null Consensus — Large Subnets and Exact Weight Ratios',
   description:
     'Opt-in Null consensus selects the highest-stake validator for miner rewards, pays ' +
-    'stake-proportional dividends, and supports a shared capacity of 4,096 UIDs.',
+    'stake-proportional dividends, and supports a shared capacity of 2,500 UIDs.',
   alternates: {canonical: '/releases/null-consensus'},
 };
 
@@ -41,8 +41,8 @@ export default function Page() {
         <section className={styles.section}>
           <h2 className={styles.subtitle}>Capacity and switching</h2>
           <p>
-            Null shares a 4,096-UID capacity budget across emission mechanisms: 4,096 with one
-            mechanism, 2,048 with two, and 1,024 with four. Switching to Null preserves current
+            Null shares a 2,500-UID capacity budget across emission mechanisms: 2,500 with one
+            mechanism, 1,250 with two, and 625 with four. Switching to Null preserves current
             capacity until the owner raises it. Returning to Yuma requires the registered population
             to fit its shared 256-UID budget; successful switching also clamps configured capacity.
             Pruning is an explicit owner action, with at most 64 UID deletions per transaction.
@@ -87,7 +87,7 @@ export default function Page() {
           </p>
           <pre className={styles.code_block}>{`# Subnet owner: switch, then raise capacity
 btcli hparams set --netuid 1 --name epoch_consensus --value Null
-btcli hparams set --netuid 1 --name max_allowed_uids --value 4096
+btcli hparams set --netuid 1 --name max_allowed_uids --value 2500
 
 # Validator: weights.json contains {"2": 65534, "3": 1, ...}
 btcli misc weights set --netuid 1 --raw-u16 --weights-file weights.json`}</pre>

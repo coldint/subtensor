@@ -32,7 +32,7 @@ pub const GLOBAL_MAX_SUBNET_COUNT: u16 = 4096;
 pub const MAX_MECHANISM_COUNT_PER_SUBNET: u8 = 16;
 
 /// Shared UID capacity across all emission mechanisms in Null consensus.
-pub const NULL_UID_BUDGET: u16 = 4_096;
+pub const NULL_UID_BUDGET: u16 = 2_500;
 
 impl<T: Config> Pallet<T> {
     pub fn get_mechanism_storage_index(netuid: NetUid, sub_id: MechId) -> NetUidStorageIndex {

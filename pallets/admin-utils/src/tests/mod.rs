@@ -3903,10 +3903,10 @@ fn null_consensus_capacity_and_switch_boundaries() {
         assert_ok!(AdminUtils::sudo_set_max_allowed_uids(
             RuntimeOrigin::root(),
             netuid,
-            4_096
+            2_500
         ));
         assert_noop!(
-            AdminUtils::sudo_set_max_allowed_uids(RuntimeOrigin::root(), netuid, 4_097),
+            AdminUtils::sudo_set_max_allowed_uids(RuntimeOrigin::root(), netuid, 2_501),
             Error::<Test>::MaxAllowedUidsGreaterThanDefaultMaxAllowedUids
         );
         assert_noop!(
@@ -3916,14 +3916,14 @@ fn null_consensus_capacity_and_switch_boundaries() {
         assert_ok!(AdminUtils::sudo_set_max_allowed_uids(
             RuntimeOrigin::root(),
             netuid,
-            2_048
+            1_250
         ));
         assert_ok!(SubtensorModule::do_set_mechanism_count(
             netuid,
             MechId::from(2)
         ));
         assert_noop!(
-            AdminUtils::sudo_set_max_allowed_uids(RuntimeOrigin::root(), netuid, 2_049),
+            AdminUtils::sudo_set_max_allowed_uids(RuntimeOrigin::root(), netuid, 1_251),
             pallet_subtensor::Error::<Test>::TooManyUIDsPerMechanism
         );
         pallet_subtensor::SubnetworkN::<Test>::insert(netuid, 129);
@@ -3935,7 +3935,7 @@ fn null_consensus_capacity_and_switch_boundaries() {
             ),
             pallet_subtensor::Error::<Test>::TooManyUIDsPerMechanism
         );
-        assert_eq!(SubtensorModule::get_max_allowed_uids(netuid), 2_048);
+        assert_eq!(SubtensorModule::get_max_allowed_uids(netuid), 1_250);
         assert_eq!(
             SubtensorModule::get_epoch_consensus(netuid),
             EpochConsensus::Null
