@@ -2380,6 +2380,18 @@ mod tests {
             let address = addr_from_index(SubnetPrecompile::<Runtime>::INDEX);
             let precompiles = precompiles::<SubnetPrecompile<Runtime>>();
             pallet_subtensor::ImmunityPeriod::<Runtime>::insert(netuid, 0);
+            let saved_limit = pallet_subtensor::MaxAllowedValidators::<Runtime>::get(netuid);
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("getSavedYumaValidatorLimit(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns((false, 0u16));
             frame_system::Pallet::<Runtime>::set_block_number(10);
             for uid in 0..192u16 {
                 let hotkey = mapped_account(addr_from_index(u64::from(uid) + 0x6000));
@@ -2403,6 +2415,17 @@ mod tests {
                 )
                 .with_static_call(true)
                 .execute_returns(pallet_subtensor::subnets::uids::NULL_PRUNING_BATCH);
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("getSavedYumaValidatorLimit(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns((true, saved_limit));
             let input = encode_with_selector(
                 selector_u32("trimNullUidsBatch(uint16,uint16)"),
                 (TEST_NETUID_U16, 64u16),
@@ -2457,6 +2480,31 @@ mod tests {
                 )
                 .with_static_call(true)
                 .execute_returns((false, 0u16, 64u16));
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("setEpochConsensus(uint16,uint8)"),
+                        (TEST_NETUID_U16, 0u8),
+                    ),
+                )
+                .execute_returns(());
+            assert_eq!(
+                pallet_subtensor::MaxAllowedValidators::<Runtime>::get(netuid),
+                saved_limit.min(64)
+            );
+            precompiles
+                .prepare_test(
+                    caller,
+                    address,
+                    encode_with_selector(
+                        selector_u32("getSavedYumaValidatorLimit(uint16)"),
+                        (TEST_NETUID_U16,),
+                    ),
+                )
+                .with_static_call(true)
+                .execute_returns((false, 0u16));
         });
     }
 }

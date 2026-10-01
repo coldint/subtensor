@@ -39,6 +39,11 @@ Explicit pruning is separately being converted to bounded transactions. Its
 new dispatchables, the populated consensus switch, and mechanism removal need
 fresh reference weights on the final implementation before deployment.
 
+A read-only mainnet population check on 2026-10-01 found 129 populated subnets,
+including subnet 18 with 257 UIDs. The consensus-switch benchmark therefore
+covers the target Null mode's entire accepted 4,096-UID population. It must not
+assume that historical Yuma state obeys today's configured 256-UID ceiling.
+
 The legacy trim selector adds one mode-selection storage read. The runtime fee
 guard confirms its 100-byte baseline increases from 126,404 to 132,654 rao;
 only that deliberate change is repinned. These are interim charges before the

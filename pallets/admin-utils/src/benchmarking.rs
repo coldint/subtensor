@@ -643,46 +643,16 @@ mod benchmarks {
 
     #[benchmark]
     fn sudo_set_epoch_consensus() {
-        let netuid = NetUid::from(1);
-        pallet_subtensor::Pallet::<T>::set_admin_freeze_window(0);
-        pallet_subtensor::Pallet::<T>::init_new_network(netuid, 1u16);
-        // The expensive direction elects a validator from every registered UID.
-        // Yuma bounds this transition to its shared 256-UID budget.
-        let n = pallet_subtensor::DefaultMaxAllowedUids::<T>::get();
-        pallet_subtensor::Pallet::<T>::set_max_allowed_uids(netuid, n);
-        for uid in 0..n {
-            let hotkey: T::AccountId = account("consensus_hotkey", u32::from(uid), 0);
-            let coldkey: T::AccountId = account("consensus_coldkey", u32::from(uid), 0);
-            pallet_subtensor::Owner::<T>::insert(&hotkey, &coldkey);
-            pallet_subtensor::Pallet::<T>::append_neuron(netuid, &hotkey, 0);
-            pallet_subtensor::Pallet::<T>::increase_stake_for_hotkey_and_coldkey_on_subnet(
-                &hotkey,
-                &coldkey,
-                netuid,
-                1_000_000_000u64.into(),
-            );
-        }
-        // Exercise the allowed five child edges and their matching parents.
-        for uid in 0..n {
-            let hotkey: T::AccountId = account("consensus_hotkey", u32::from(uid), 0);
-            let children = (1..=5u16)
-                .map(|offset| {
-                    let child: T::AccountId =
-                        account("consensus_hotkey", u32::from((uid + offset) % n), 0);
-                    (u64::MAX / 10, child)
-                })
-                .collect::<Vec<_>>();
-            let parents = (1..=5u16)
-                .map(|offset| {
-                    let parent: T::AccountId =
-                        account("consensus_hotkey", u32::from((uid + n - offset) % n), 0);
-                    (u64::MAX / 10, parent)
-                })
-                .collect::<Vec<_>>();
-            pallet_subtensor::ChildKeys::<T>::insert(&hotkey, netuid, children);
-            pallet_subtensor::ParentKeys::<T>::insert(&hotkey, netuid, parents);
-        }
-
+        // Legacy state can exceed today's Yuma capacity. Charge the population accepted
+        // by the target Null mode rather than assuming the default Yuma limit.
+        let netuid = setup_null_pruning_benchmark::<T>(1);
+        pallet_subtensor::Pallet::<T>::set_epoch_consensus(
+            netuid,
+            pallet_subtensor::EpochConsensus::Yuma,
+        );
+        pallet_subtensor::Pallet::<T>::set_max_allowed_validators(netuid, 128);
+        let index = pallet_subtensor::Pallet::<T>::get_mechanism_storage_index(netuid, 0.into());
+        let _ = pallet_subtensor::TimelockedWeightCommits::<T>::clear_prefix(index, u32::MAX, None);
         #[extrinsic_call]
         _(
             RawOrigin::Root,
