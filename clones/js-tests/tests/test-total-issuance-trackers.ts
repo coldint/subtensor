@@ -13,7 +13,7 @@ const ETH_RPC_ENDPOINT = process.env.ETH_RPC_ENDPOINT ?? "http://127.0.0.1:9944"
 const RUN_ID = process.env.TOTAL_ISSUANCE_RUN_ID ?? `run${Date.now()}p${process.pid}`;
 const FUND_SOURCE_URI = process.env.TOTAL_ISSUANCE_FUND_SOURCE_URI ?? "//Alice";
 const FUND_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_FUND_AMOUNT ?? "5000000000000");
-const EVM_PRIORITY_FEE = BigInt(process.env.TOTAL_ISSUANCE_EVM_PRIORITY_FEE ?? "10");
+const EVM_BASE_FEE = 10_000_000_000n;
 const STAKE_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_STAKE_AMOUNT ?? "10000000000");
 const TRANSFER_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_TRANSFER_AMOUNT ?? "1000000000");
 const NEURON_BURN = BigInt(process.env.TOTAL_ISSUANCE_NEURON_BURN ?? "1000000");
@@ -293,9 +293,14 @@ async function exerciseSubnetDeregistrationByRegistration() {
 
 async function exerciseEvmContractFees() {
   await ensureEvmWhitelistDisabled();
+  const baseFeeStorage = api.query.baseFee?.baseFeePerGas;
+  assert.ok(baseFeeStorage, "BaseFee.BaseFeePerGas storage is unavailable");
+  await sudoSetStorage(
+    [[baseFeeStorage.key(), storageValueHex("U256", EVM_BASE_FEE)]],
+    "sudo normalize EVM base fee",
+  );
   const wallet = getEvmWallet();
   const provider = new ethers.JsonRpcProvider(ETH_RPC_ENDPOINT);
-  const connectedWallet = wallet.connect(provider);
   await provider.getBlockNumber();
   const latestBlock = await provider.getBlock("latest");
   const feeData = await provider.getFeeData();
