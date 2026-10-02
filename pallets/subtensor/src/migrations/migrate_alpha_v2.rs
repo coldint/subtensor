@@ -353,6 +353,9 @@ pub fn continue_migration<T: Config>(limit: Weight) -> Weight {
         let mut flush_allowance = Weight::zero();
         if settlement_candidate {
             cost.saturating_accrue(Pallet::<T>::staking_hotkeys_walk_actual(&coldkey));
+            // Removing a share also checks both alpha key prefixes and BasketClaimed,
+            // then may read/rewrite StakingHotkeys. Reserve this before settling the row.
+            cost.saturating_accrue(T::DbWeight::get().reads_writes(4, 1));
             if netuid.is_root()
                 && payout
                 && PendingBasketDeposits::<T>::iter_key_prefix(&hotkey)
@@ -637,6 +640,7 @@ mod tests {
             );
             run_batches();
             assert!(!AlphaV2::<Test>::contains_key((hot, cold, netuid)));
+            assert!(!StakingHotkeys::<Test>::get(cold).contains(&hot));
             assert_eq!(
                 TotalHotkeySharesV2::<Test>::get(hot, netuid),
                 SafeFloat::from(1u64)

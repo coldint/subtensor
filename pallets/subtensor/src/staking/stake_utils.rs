@@ -3,6 +3,7 @@ use crate::migrations::migrate_alpha_v2::retired::{Alpha, TotalHotkeyShares};
 use frame_support::dispatch::{
     DispatchErrorWithPostInfo, DispatchResultWithPostInfo, PostDispatchInfo,
 };
+use frame_support::storage::StorageNMap as _;
 use frame_support::weights::Weight;
 use safe_math::*;
 use share_pool::{SafeFloat, SharePool, SharePoolDataOperations};
@@ -686,14 +687,26 @@ impl<T: Config> Pallet<T> {
         pool_before.saturating_sub(pool_after)
     }
 
-    /// Remove a staking-hotkey association once the pair has no stake left anywhere.
+    /// Keep the index until all alpha keys have been removed, across both share formats
+    /// and every subnet. Even a zero-valued share can grow with pool-wide dividends,
+    /// which do not recreate the index. Exact-zero rows are removed by storage GC.
+    /// Each prefix probe visits at most one key; no relationship-wide scan is needed.
+    pub(crate) fn staking_hotkey_must_remain(
+        hotkey: &T::AccountId,
+        coldkey: &T::AccountId,
+    ) -> bool {
+        Alpha::<T>::contains_prefix((hotkey, coldkey))
+            || AlphaV2::<T>::contains_prefix((hotkey, coldkey))
+            || BasketClaimed::<T>::get(hotkey, coldkey) != 0
+    }
+
+    /// Remove a staking-hotkey association once the pair has no alpha keys left anywhere.
     ///
     /// A non-zero basket watermark also keeps the association alive. In particular, an
     /// unstaked root claimant can have a negative watermark representing basket shares that
     /// still need to be claimed or moved during a coldkey swap.
     pub(crate) fn maybe_remove_staking_hotkey(hotkey: &T::AccountId, coldkey: &T::AccountId) {
-        let has_stake = Self::alpha_iter_prefix((hotkey, coldkey)).next().is_some();
-        if has_stake || BasketClaimed::<T>::get(hotkey, coldkey) != 0 {
+        if Self::staking_hotkey_must_remain(hotkey, coldkey) {
             return;
         }
 
