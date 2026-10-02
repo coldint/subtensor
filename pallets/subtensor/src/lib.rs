@@ -2699,6 +2699,12 @@ pub mod pallet {
     #[pallet::storage]
     pub type NetworkRegistrationLockId<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Escrow-backed queue entries. Absence denotes a pre-upgrade balance lock.
+    /// Keep the existing queue encoding unchanged so pending registrations remain decodable.
+    #[pallet::storage]
+    pub type NetworkRegistrationEscrow<T: Config> =
+        StorageMap<_, Identity, u32, (AccountIdOf<T>, TaoBalance), OptionQuery>;
+
     // =======================================
     // ==== VotingPower Storage  ====
     // =======================================
