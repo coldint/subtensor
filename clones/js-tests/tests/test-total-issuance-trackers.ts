@@ -13,7 +13,7 @@ const ETH_RPC_ENDPOINT = process.env.ETH_RPC_ENDPOINT ?? "http://127.0.0.1:9944"
 const RUN_ID = process.env.TOTAL_ISSUANCE_RUN_ID ?? `run${Date.now()}p${process.pid}`;
 const FUND_SOURCE_URI = process.env.TOTAL_ISSUANCE_FUND_SOURCE_URI ?? "//Alice";
 const FUND_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_FUND_AMOUNT ?? "5000000000000");
-const EVM_GAS_PRICE = BigInt(process.env.TOTAL_ISSUANCE_EVM_GAS_PRICE ?? "10");
+const EVM_PRIORITY_FEE = BigInt(process.env.TOTAL_ISSUANCE_EVM_PRIORITY_FEE ?? "10");
 const STAKE_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_STAKE_AMOUNT ?? "10000000000");
 const TRANSFER_AMOUNT = BigInt(process.env.TOTAL_ISSUANCE_TRANSFER_AMOUNT ?? "1000000000");
 const NEURON_BURN = BigInt(process.env.TOTAL_ISSUANCE_NEURON_BURN ?? "1000000");
@@ -297,10 +297,22 @@ async function exerciseEvmContractFees() {
   const provider = new ethers.JsonRpcProvider(ETH_RPC_ENDPOINT);
   const connectedWallet = wallet.connect(provider);
   await provider.getBlockNumber();
+  const feeData = await provider.getFeeData();
+  const baseFee = feeData.maxFeePerGas ?? feeData.gasPrice;
+  if (baseFee === null) throw new Error("EVM provider did not return a gas fee");
+  const feeOverrides = {
+    maxFeePerGas: baseFee + EVM_PRIORITY_FEE,
+    maxPriorityFeePerGas: EVM_PRIORITY_FEE,
+  };
+  console.log(
+    "EVM fee overrides:",
+    `maxFeePerGas=${feeOverrides.maxFeePerGas}`,
+    `maxPriorityFeePerGas=${feeOverrides.maxPriorityFeePerGas}`,
+  );
   await assertIssuanceMatch("before EVM deployment");
 
   const factory = new ethers.ContractFactory([], SIMPLE_RETURN_42_BYTECODE, connectedWallet);
-  const contract = await factory.deploy({ gasLimit: 150_000, gasPrice: EVM_GAS_PRICE });
+  const contract = await factory.deploy({ gasLimit: 150_000, ...feeOverrides });
   const deployReceipt = await contract.deploymentTransaction().wait();
   assert.equal(deployReceipt.status, 1, "contract deployment failed");
   await assertIssuanceMatch("after EVM contract deployment");
@@ -311,7 +323,7 @@ async function exerciseEvmContractFees() {
       to: contractAddress,
       data: "0x",
       gasLimit: 50_000,
-      gasPrice: EVM_GAS_PRICE,
+      ...feeOverrides,
     });
     const receipt = await tx.wait();
     assert.equal(receipt.status, 1, `EVM contract call ${index} failed`);
