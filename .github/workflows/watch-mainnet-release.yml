@@ -348,12 +348,21 @@ jobs:
   build-core:
     name: Build bittensor-core wheels
     needs: [check, release]
+    # A manual retry may intentionally run while the release job is skipped
+    # because the GitHub release is already final. `always()` is required for
+    # that skipped dependency to remain eligible; release failures never pass
+    # the explicit result check below.
     if: >-
+      always() &&
       !cancelled() &&
       needs.check.outputs.python_needed == 'true' &&
-      (needs.release.outputs.finalized == 'true' ||
-       (github.event_name == 'workflow_dispatch' &&
-        needs.check.outputs.release_needed == 'false'))
+      (
+        (needs.release.result == 'success' &&
+         needs.release.outputs.finalized == 'true') ||
+        (github.event_name == 'workflow_dispatch' &&
+         needs.check.outputs.release_needed == 'false' &&
+         needs.release.result == 'skipped')
+      )
     uses: ./.github/workflows/build-core-wheels.yml
     with:
       ref: ${{ needs.check.outputs.sha }}
