@@ -297,8 +297,9 @@ async function exerciseEvmContractFees() {
   const provider = new ethers.JsonRpcProvider(ETH_RPC_ENDPOINT);
   const connectedWallet = wallet.connect(provider);
   await provider.getBlockNumber();
+  const latestBlock = await provider.getBlock("latest");
   const feeData = await provider.getFeeData();
-  const baseFee = feeData.maxFeePerGas ?? feeData.gasPrice;
+  const baseFee = latestBlock?.baseFeePerGas ?? feeData.gasPrice;
   if (baseFee === null) throw new Error("EVM provider did not return a gas fee");
   const feeOverrides = {
     maxFeePerGas: baseFee + EVM_PRIORITY_FEE,
