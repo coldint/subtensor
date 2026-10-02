@@ -306,6 +306,8 @@ class Client:
         *,
         workers: int = 4,
         max_seconds: float = 300,
+        backend: str = "auto",
+        device_ids: tuple[int, ...] | None = None,
     ):
         """Mine a fresh PowRegister intent using public addresses only.
 
@@ -323,6 +325,8 @@ class Client:
             coldkey_ss58,
             workers=workers,
             max_seconds=max_seconds,
+            backend=backend,
+            device_ids=device_ids,
         )
 
     async def timestamp(self, block: Optional[int] = None) -> datetime:

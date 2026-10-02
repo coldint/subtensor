@@ -26,6 +26,8 @@ with `client.mine_pow_registration` and submit it promptly.
 | `hotkey_ss58` | string | no | Hotkey receiving the UID. |
 | `mining_workers` | integer | no | Workers when the CLI refreshes an expired proof. |
 | `mining_timeout` | number | no | Seconds allowed for CLI proof refresh. |
+| `mining_backend` | string | no | auto, gpu, or cpu mining. |
+| `mining_device_ids` | array of integer | no | GPU device ids, or all discovered GPUs. |
 
 Address parameters (`--hotkey`, `--coldkey`, `--dest`, ...) accept a raw ss58
 address, an address-book or proxy-book name, or a local wallet/hotkey name.
@@ -91,6 +93,6 @@ pub fn pow_register(
 }
 ```
 
-Delegates to [`do_pow_register`](/code/pallets/subtensor/src/subnets/registration.rs#L121).
+Delegates to [`do_pow_register`](/code/pallets/subtensor/src/subnets/registration.rs#L123).
 
 Every file is browsable under [/code](/code) exactly as built into the runtime, or as plain text under `/code/raw/<path>` (index: [`/code/index.json`](/code/index.json)).

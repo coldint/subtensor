@@ -758,7 +758,7 @@ pub mod pallet {
             Ok(())
         }
 
-        /// The extrinsic sets the network registration allowed for a subnet.
+        /// Enable or disable burned registration independently of PoW.
         /// It is only callable by the root account or subnet owner.
         /// The extrinsic will call the Subtensor pallet to set the network registration allowed.
         #[pallet::call_index(19)]
@@ -768,10 +768,38 @@ pub mod pallet {
             netuid: NetUid,
             registration_allowed: bool,
         ) -> DispatchResult {
-            ensure_root(origin)?;
+            // Root retains its separate burn-only administration path.
+            if netuid.is_root() {
+                ensure_root(origin)?;
+                pallet_subtensor::Pallet::<T>::set_network_registration_allowed(
+                    netuid,
+                    registration_allowed,
+                );
+                return Ok(());
+            }
+            let maybe_owner = pallet_subtensor::Pallet::<T>::ensure_sn_owner_or_root_with_limits(
+                origin,
+                netuid,
+                &[Hyperparameter::BurnRegistrationAllowed.into()],
+            )?;
+            ensure!(
+                pallet_subtensor::Pallet::<T>::if_subnet_exist(netuid),
+                Error::<T>::SubnetDoesNotExist
+            );
+            pallet_subtensor::Pallet::<T>::ensure_admin_window_open(netuid)?;
+            ensure!(
+                registration_allowed
+                    || pallet_subtensor::Pallet::<T>::get_network_pow_registration_allowed(netuid),
+                Error::<T>::InvalidValue
+            );
             pallet_subtensor::Pallet::<T>::set_network_registration_allowed(
                 netuid,
                 registration_allowed,
+            );
+            pallet_subtensor::Pallet::<T>::record_owner_rl(
+                maybe_owner,
+                netuid,
+                &[Hyperparameter::BurnRegistrationAllowed.into()],
             );
             log::debug!(
                 "NetworkRegistrationAllowed( registration_allowed: {registration_allowed:?} ) "
@@ -800,6 +828,11 @@ pub mod pallet {
                 Error::<T>::SubnetDoesNotExist
             );
             ensure!(!netuid.is_root(), Error::<T>::NotPermittedOnRootSubnet);
+            ensure!(
+                registration_allowed
+                    || pallet_subtensor::Pallet::<T>::get_network_registration_allowed(netuid),
+                Error::<T>::InvalidValue
+            );
             pallet_subtensor::Pallet::<T>::set_network_pow_registration_allowed(
                 netuid,
                 registration_allowed,

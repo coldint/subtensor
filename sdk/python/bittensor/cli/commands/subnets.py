@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from enum import Enum
 from typing import Optional
 
 import typer
@@ -527,6 +528,12 @@ def subnet_conviction(
         )
 
 
+class PowBackend(str, Enum):
+    auto = "auto"
+    gpu = "gpu"
+    cpu = "cpu"
+
+
 @app.command("register", rich_help_panel=PANEL_REGISTER)
 @with_tx_globals
 def register_subnet(
@@ -540,6 +547,17 @@ def register_subnet(
     ),
     pow_workers: int = typer.Option(
         4, "--pow-workers", min=1, max=32, help="CPU mining workers for --pow."
+    ),
+    pow_backend: PowBackend = typer.Option(
+        PowBackend.auto,
+        "--pow-backend",
+        help="Use all discovered GPUs automatically, require GPU, or use CPU.",
+    ),
+    pow_device: Optional[list[int]] = typer.Option(
+        None,
+        "--pow-device",
+        min=0,
+        help="GPU device id; repeat to select devices. Default: all GPUs.",
     ),
     pow_timeout: float = typer.Option(
         300, "--pow-timeout", min=1, max=3600, help="Maximum mining time in seconds."
@@ -578,6 +596,8 @@ def register_subnet(
                     coldkey,
                     workers=pow_workers,
                     max_seconds=pow_timeout,
+                    backend=pow_backend.value,
+                    device_ids=pow_device,
                 )
             )
         app_ctx.submit(intent)

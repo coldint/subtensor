@@ -4,8 +4,9 @@ description: Enable fee-free proof-of-work registration on a non-root subnet.
 ---
 
 Subnet owners may enable PoW registration independently of the epoch consensus
-mechanism. It is off by default. The general `registration_allowed` flag must
-also be enabled. Root registration retains its separate admission path.
+mechanism. It is off by default and independent of the burn toggle,
+`registration_allowed`. Owners may enable burn, PoW or both, but cannot disable
+the last enabled method. Root registration retains its separate admission path.
 
 ```bash
 btcli hparams set --netuid 1 --name network_pow_registration_allowed --value true
@@ -27,11 +28,22 @@ pruning and immunity rules; work does not guarantee that an occupied slot is ava
 
 The owner toggle uses the normal admin window and hyperparameter cooldown.
 Disabling it stops new PoW submissions without deleting existing participants.
-Burn registration remains available. The legacy `register` call retains its
+Burn registration remains available when its own toggle is enabled. The legacy
+`register` call retains its
 burn-based behaviour; use `pow_register` for actual PoW.
 
-The current `difficulty` value controls the work threshold. Root can change it;
-the retired automatic difficulty controller is not restored by this feature.
+The current `difficulty` value controls the work threshold. Successful PoW
+registration increases only difficulty, while burn registration increases only
+burn price. Both reuse `burn_increase_mult` and `burn_half_life`; their prices
+decay independently toward their own bounds. Root/governance controls the PoW
+minimum, and owners cannot bypass it with a lower maximum. The old interval
+controller is not restored.
+
+The Rust miner uses all discovered OpenCL GPUs by default, with CPU fallback.
+Use `--pow-backend gpu` to require GPU mining or `--pow-backend cpu` to select CPU.
+Long searches refresh the latest block hash every twelve seconds; found proofs
+are checked against current difficulty. Work is accepted through the five-block
+window, and the CLI can remine a proof rejected before inclusion because it expired.
 See [Null consensus](/docs/guides/null-consensus) and
 [difficulty](/docs/hyperparameters/difficulty).
 

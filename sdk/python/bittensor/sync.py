@@ -412,11 +412,19 @@ class SyncClient:
         *,
         workers: int = 4,
         max_seconds: float = 300,
+        backend: str = "auto",
+        device_ids: tuple[int, ...] | None = None,
     ):
         """Mine a fresh public challenge for fee-free subnet registration."""
         return self._call(
             self._client.mine_pow_registration(
-                netuid, hotkey_ss58, coldkey_ss58, workers=workers, max_seconds=max_seconds
+                netuid,
+                hotkey_ss58,
+                coldkey_ss58,
+                workers=workers,
+                max_seconds=max_seconds,
+                backend=backend,
+                device_ids=device_ids,
             )
         )
 

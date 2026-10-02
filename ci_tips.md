@@ -796,3 +796,25 @@ the check or describe it as passed. All other CI checks and the mandatory local
 preflight/pre-push gate must pass. Further reward-accounting optimizations are
 deferred; payouts remain atomic. This exception does not supply measured weights
 or establish that deployment resource limits have passed.
+
+## PoW challenge refresh validation (2026-10-02)
+
+Competitive registration mining refreshes the latest published block challenge
+on a 12-second cadence. Chain admission accepts work with age 1 through 5 blocks;
+transaction-pool longevity reflects the remaining lifetime. The miner must not
+restart or poll the chain after every small GPU batch. A found proof is checked
+against the latest difficulty before submission. Preserve key/subnet binding,
+replay rejection, disjoint GPU nonce ranges and bounded cancellation.
+
+Verify the 12-second refresh with a deterministic clock, exact accepted/rejected
+age boundaries, difficulty changes during mining, and live GPU registration on
+the rebuilt runtime. Delay a broadcast beyond the buffer to exercise bounded
+fresh-proof recovery; do not replay included or uncertain transactions. Raising
+the CLI mining timeout alone does not change on-chain proof expiry.
+
+If the local Python-binding Rust tests fail to link `-lpython3.12`, check that
+the interpreter selected by PyO3 has its shared development library installed.
+Select an installed managed interpreter with that library using
+`PYO3_PYTHON=/path/to/python3.12 scripts/preflight.sh`, and preserve that setting
+for the pre-push hook. This is a local toolchain issue; do not disable the tests
+or change the binding code to hide it.

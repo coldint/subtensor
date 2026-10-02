@@ -10,6 +10,7 @@ import bittensor as bt
 from tests.harness.samples import dev_wallet
 
 E2E_ENDPOINT = os.getenv("E2E_ENDPOINT")
+POW_BACKEND = os.getenv("E2E_POW_BACKEND", "auto")
 pytestmark = [
     pytest.mark.asyncio,
     pytest.mark.skipif(not E2E_ENDPOINT, reason="requires an Alice-root local development chain"),
@@ -36,12 +37,30 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
         await submit(bt.calls.AdminUtils.sudo_set_owner_hparam_rate_limit(epochs=0), root=True)
         await submit(bt.calls.AdminUtils.sudo_set_admin_freeze_window(window=0), root=True)
         await submit(
+            bt.calls.AdminUtils.sudo_set_min_difficulty(netuid=netuid, min_difficulty=1), root=True
+        )
+        await submit(
             bt.calls.AdminUtils.sudo_set_difficulty(netuid=netuid, difficulty=1), root=True
+        )
+        await submit(
+            bt.calls.AdminUtils.sudo_set_burn_increase_mult(
+                netuid=netuid, burn_increase_mult={"bits": 2 << 64}
+            )
+        )
+        # Pin burn to its floor so block decay cannot obscure cross-route bumps.
+        burn_floor = await client.query(st.Burn, [netuid])
+        await submit(
+            bt.calls.AdminUtils.sudo_set_min_burn(netuid=netuid, min_burn=burn_floor), root=True
         )
         # Exercise the owner's signed administration path, not just sudo.
         await submit(
             bt.calls.AdminUtils.sudo_set_network_pow_registration_allowed(
                 netuid=netuid, registration_allowed=True
+            )
+        )
+        await submit(
+            bt.calls.AdminUtils.sudo_set_network_registration_allowed(
+                netuid=netuid, registration_allowed=False
             )
         )
         result = await client.execute_tool(
@@ -64,7 +83,7 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
         burn = await client.query(st.Burn, [netuid])
         population = await client.query(st.SubnetworkN, [netuid])
         intent = await client.mine_pow_registration(
-            netuid, hotkey, coldkey, workers=1, max_seconds=30
+            netuid, hotkey, coldkey, workers=1, max_seconds=30, backend=POW_BACKEND
         )
         result = await client.execute(intent, newcomer)
         assert result.success, result.message
@@ -73,8 +92,8 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
         assert await client.query(st.Owner, [hotkey]) == coldkey
         assert await client.query(st.Uids, [netuid, hotkey]) is not None
         assert await client.query(st.SubnetworkN, [netuid]) == population + 1
-        # The price decays naturally each block, but PoW must not bump it.
-        assert await client.query(st.Burn, [netuid]) <= burn
+        # PoW-only admission must preserve burn price exactly.
+        assert await client.query(st.Burn, [netuid]) == burn
         assert await client.query(st.MinerCollateral, [netuid, hotkey, coldkey]) is None
         assert await client.query(st.LastPowRegistrationBlock, [hotkey]) == intent.work_block
         if result.fee is not None:
@@ -110,6 +129,8 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
             "--netuid",
             str(netuid),
             "--pow",
+            "--pow-backend",
+            POW_BACKEND,
             "--pow-workers",
             "1",
             "--pow-timeout",
@@ -134,6 +155,19 @@ async def test_pow_register_unfunded_coldkey_and_owner_toggle(tmp_path):
         account = await client.query(bt.storage.System.Account, [cli_coldkey])
         assert int(account["data"]["free"]) == 0
         assert await client.query(st.MinerCollateral, [netuid, cli_hotkey, cli_coldkey]) is None
+        refused = await client.submit_call(
+            bt.calls.AdminUtils.sudo_set_network_pow_registration_allowed(
+                netuid=netuid, registration_allowed=False
+            ),
+            alice,
+        )
+        assert not refused.success
+        assert await client.query(st.NetworkPowRegistrationAllowed, [netuid])
+        await submit(
+            bt.calls.AdminUtils.sudo_set_network_registration_allowed(
+                netuid=netuid, registration_allowed=True
+            )
+        )
         await submit(
             bt.calls.AdminUtils.sudo_set_network_pow_registration_allowed(
                 netuid=netuid, registration_allowed=False

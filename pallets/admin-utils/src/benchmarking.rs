@@ -464,15 +464,13 @@ mod benchmarks {
 
     #[benchmark]
     fn sudo_set_network_registration_allowed() {
-        // disable admin freeze window
-        pallet_subtensor::Pallet::<T>::set_admin_freeze_window(0);
-        pallet_subtensor::Pallet::<T>::init_new_network(
-            1u16.into(), /*netuid*/
-            1u16,        /*tempo*/
-        );
-
+        let netuid = NetUid::from(1);
+        let owner = setup_worst_case_admin_subnet::<T>(netuid);
         #[extrinsic_call]
-		_(RawOrigin::Root, 1u16.into()/*netuid*/, true/*registration_allowed*/)/*sudo_set_network_registration_allowed*/;
+        _(RawOrigin::Signed(owner), netuid, true);
+        assert!(pallet_subtensor::NetworkRegistrationAllowed::<T>::get(
+            netuid
+        ));
     }
 
     #[benchmark]

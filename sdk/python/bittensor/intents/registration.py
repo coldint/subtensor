@@ -79,6 +79,11 @@ class PowRegister(Intent):
         default=300, metadata={"help": "Seconds allowed for CLI proof refresh."}
     )
 
+    mining_backend: str = field(default="auto", metadata={"help": "auto, gpu, or cpu mining."})
+    mining_device_ids: Optional[list[int]] = field(
+        default=None, metadata={"help": "GPU device ids, or all discovered GPUs."}
+    )
+
     async def build(self, substrate, wallet: Any):
         work = bytes.fromhex(self.work_hex.removeprefix("0x"))
         if len(work) != 32 or not 0 <= self.nonce < 1 << 64:

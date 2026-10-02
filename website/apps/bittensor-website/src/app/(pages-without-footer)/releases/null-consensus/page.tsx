@@ -58,15 +58,20 @@ export default function Page() {
             subnets. The SDK mines a recent challenge and the CLI exposes it through
             <code>btcli subnets register --netuid 1 --pow</code>. A direct, zero-tip proof
             registration pays no transaction fee, TAO burn or initial collateral purchase. Burn
-            registration remains available. PoW defaults to disabled for new subnets; previously
-            stored explicit toggles are retained. It retains per-block registration limits, pruning
-            and immunity protections.
+            registration remains available when enabled. Burn registrations raise only burn cost,
+            and PoW registrations raise only PoW difficulty. They share the multiplier and per-block
+            half-life, with separate bounds and a team-controlled PoW minimum. Owners can enable
+            either route or both, and must leave at least one enabled. PoW defaults to disabled for
+            new subnets; previously stored explicit toggles are retained. It retains per-block
+            registration limits, pruning and immunity protections.
           </p>
           <p>
-            Proofs bind the subnet and both keys, expire after two subsequent blocks, and cannot
-            reuse an accepted challenge for the same hotkey. New hotkey associations respect a
-            256-entry coldkey ownership and staking work limit; existing associations can register
-            on additional subnets. Root registration remains separate.
+            The Rust miner uses all discovered OpenCL GPUs by default, with CPU fallback. Long
+            searches refresh the latest block hash every twelve seconds. Proofs bind the subnet and
+            both keys, use a five-block freshness window, and cannot reuse an accepted challenge for
+            the same hotkey. New hotkey associations respect a 256-entry coldkey ownership and
+            staking work limit; existing associations can register on additional subnets. Root
+            registration remains separate.
           </p>
         </section>
         <section className={styles.section}>

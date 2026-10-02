@@ -1204,7 +1204,7 @@ class AdminUtils:
 
     @staticmethod
     def sudo_set_network_registration_allowed(netuid: 'NetUid', registration_allowed: 'bool') -> Call:
-        'The extrinsic sets the network registration allowed for a subnet. It is only callable by the root account or subnet owner. The extrinsic will call the Subtensor pallet to set the network registration allowed.'
+        'Enable or disable burned registration independently of PoW. It is only callable by the root account or subnet owner. The extrinsic will call the Subtensor pallet to set the network registration allowed.'
         return Call('AdminUtils', 'sudo_set_network_registration_allowed', {'netuid': netuid, 'registration_allowed': registration_allowed})
 
     @staticmethod

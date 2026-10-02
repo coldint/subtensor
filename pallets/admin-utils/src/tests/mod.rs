@@ -4188,3 +4188,115 @@ fn pow_toggle_obeys_owner_cooldown_freeze_and_root_exclusion() {
         );
     });
 }
+
+#[test]
+fn owner_registration_routes_are_independent_and_cannot_both_be_disabled() {
+    new_test_ext().execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10);
+        let owner = U256::from(9);
+        SubnetOwner::<Test>::insert(netuid, owner);
+        pallet_subtensor::OwnerHyperparamRateLimit::<Test>::put(0);
+        SubtensorModule::set_admin_freeze_window(0);
+        assert_noop!(
+            AdminUtils::sudo_set_network_registration_allowed(
+                RuntimeOrigin::signed(U256::from(10)),
+                netuid,
+                false
+            ),
+            DispatchError::BadOrigin
+        );
+        assert_noop!(
+            AdminUtils::sudo_set_network_registration_allowed(
+                RuntimeOrigin::signed(owner),
+                netuid,
+                false
+            ),
+            Error::<Test>::InvalidValue
+        );
+        assert!(SubtensorModule::get_network_registration_allowed(netuid));
+        assert_ok!(AdminUtils::sudo_set_network_pow_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            true
+        ));
+        assert_ok!(AdminUtils::sudo_set_network_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            false
+        ));
+        assert!(!SubtensorModule::get_network_registration_allowed(netuid));
+        assert_noop!(
+            AdminUtils::sudo_set_network_pow_registration_allowed(
+                RuntimeOrigin::signed(owner),
+                netuid,
+                false
+            ),
+            Error::<Test>::InvalidValue
+        );
+        assert!(SubtensorModule::get_network_pow_registration_allowed(
+            netuid
+        ));
+        assert_ok!(AdminUtils::sudo_set_network_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            true
+        ));
+        assert_ok!(AdminUtils::sudo_set_network_pow_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            false
+        ));
+        assert_noop!(
+            AdminUtils::sudo_set_network_registration_allowed(RuntimeOrigin::root(), netuid, false),
+            Error::<Test>::InvalidValue
+        );
+        assert_noop!(
+            AdminUtils::sudo_set_network_registration_allowed(
+                RuntimeOrigin::signed(owner),
+                NetUid::ROOT,
+                false
+            ),
+            DispatchError::BadOrigin
+        );
+        assert_ok!(AdminUtils::sudo_set_network_registration_allowed(
+            RuntimeOrigin::root(),
+            NetUid::ROOT,
+            false
+        ));
+    });
+}
+
+#[test]
+fn burn_toggle_obeys_owner_cooldown_and_freeze() {
+    new_test_ext().execute_with(|| {
+        let netuid = NetUid::from(1);
+        add_network(netuid, 10);
+        let owner = U256::from(9);
+        SubnetOwner::<Test>::insert(netuid, owner);
+        pallet_subtensor::OwnerHyperparamRateLimit::<Test>::put(5);
+        SubtensorModule::set_admin_freeze_window(0);
+        SubtensorModule::set_network_pow_registration_allowed(netuid, true);
+        assert_ok!(AdminUtils::sudo_set_network_registration_allowed(
+            RuntimeOrigin::signed(owner),
+            netuid,
+            false
+        ));
+        assert!(
+            AdminUtils::sudo_set_network_registration_allowed(
+                RuntimeOrigin::signed(owner),
+                netuid,
+                true
+            )
+            .is_err()
+        );
+        assert!(!SubtensorModule::get_network_registration_allowed(netuid));
+        pallet_subtensor::LastEpochBlock::<Test>::insert(netuid, 0);
+        SubtensorModule::set_admin_freeze_window(3);
+        run_to_block(8);
+        assert_noop!(
+            AdminUtils::sudo_set_network_registration_allowed(RuntimeOrigin::root(), netuid, true),
+            SubtensorError::<Test>::AdminActionProhibitedDuringWeightsWindow
+        );
+    });
+}

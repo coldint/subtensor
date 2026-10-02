@@ -31,12 +31,9 @@ floor to 10,000,000 on every subnet, matching the runtime default
 ([`SubtensorInitialMinDifficulty`](/code/runtime/src/lib.rs#L813) in
 `runtime/src/lib.rs`).
 
-Owner-enabled PoW registration now uses the current stored `difficulty`.
-The automatic controller remains retired, so this historical parameter does
-not adjust the new PoW threshold automatically. The playground below describes
-the former controller; root sets the actual work threshold explicitly.
+The team-controlled floor for dynamic PoW pricing. Quiet periods decay difficulty to this floor. The effective minimum is at least one; an owner maximum below it cannot override it.
 
-<HyperparamPowDifficulty focus="min_difficulty" />
+See [`difficulty`](/docs/hyperparameters/difficulty) for the active PoW controller and its shared settings.
 
 ## Reading and setting
 

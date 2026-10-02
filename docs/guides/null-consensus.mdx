@@ -84,10 +84,21 @@ btcli hparams set --netuid 1 --name network_pow_registration_allowed --value tru
 btcli subnets register --netuid 1 --pow --yes
 ```
 
-General registration must also be open. Direct zero-tip PoW submission pays no
+PoW and burn have independent demand: PoW admissions increase only difficulty,
+and burn admissions increase only burn cost. Both use `burn_increase_mult` and
+`burn_half_life` for their multiplier and decay. PoW keeps a separate
+team-controlled `min_difficulty` floor and its own maximum.
+
+Owners can toggle burned registration with `registration_allowed` independently
+of PoW. At least one route must stay enabled on a non-root subnet; enable the
+replacement route before disabling the other. Direct zero-tip PoW submission pays no
 registration burn, initial collateral purchase or transaction fee. The CLI
-refreshes stale mining challenges, uses public addresses in CPU workers, and
-signs through the usual coldkey workflow. Use `--pow-workers` and `--pow-timeout`
+pulls the latest block challenge every 12 seconds while mining. The chain accepts
+proofs from the five preceding blocks, leaving time for signing and propagation.
+Only public challenge data enters the Rust GPU or CPU workers; signing stays in
+the usual coldkey workflow. Automatic mining uses all discovered OpenCL GPUs,
+with CPU fallback. Use `--pow-backend gpu` to require GPU mining, repeat
+`--pow-device` to select devices, and use `--pow-workers` and `--pow-timeout`
 to bound mining resources. Work does not bypass pruning, immunity, ownership or
 per-block registration limits. Root keeps its separate registration path.
 
@@ -189,5 +200,7 @@ with bt.Subtensor("test") as sub:
 
 For async clients, await `client.mine_pow_registration(...)` and then
 `client.execute(...)`. Submit a returned proof promptly. The CLI refreshes an
-expired proof after confirmation and key unlock while keeping the selected subnet
-and hotkey unchanged.
+expired proof after confirmation and key unlock while keeping the selected subnet,
+hotkey and mining backend unchanged. Confirmed pre-inclusion expiry may trigger
+fresh mining, with at most three submission attempts; included transactions are
+never replayed by this recovery path.

@@ -56,6 +56,7 @@ OWNER_HYPERPARAMETERS: dict[str, tuple[str, bool]] = {
     "alpha_high": ("sudo_set_alpha_values", False),
     "commit_reveal_weights_enabled": ("sudo_set_commit_reveal_weights_enabled", True),
     "liquid_alpha_enabled": ("sudo_set_liquid_alpha_enabled", True),
+    "registration_allowed": ("sudo_set_network_registration_allowed", True),
     "network_pow_registration_allowed": ("sudo_set_network_pow_registration_allowed", True),
     "yuma3_enabled": ("sudo_set_yuma3_enabled", True),
     "bonds_reset_enabled": ("sudo_set_bonds_reset_enabled", True),

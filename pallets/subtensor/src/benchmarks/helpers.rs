@@ -339,6 +339,7 @@ pub(super) fn setup_pow_registration_benchmark<T: Config>()
     Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
     Subtensor::<T>::set_max_allowed_uids(netuid, n);
     Subtensor::<T>::set_network_pow_registration_allowed(netuid, true);
+    Subtensor::<T>::set_min_difficulty(netuid, 1);
     Subtensor::<T>::set_difficulty(netuid, 1);
     system::Pallet::<T>::set_block_number(2u32.into());
     let hash = <T as frame_system::Config>::Hash::decode(&mut &[1u8; 32][..])
@@ -462,6 +463,12 @@ fn setup_block_step_benchmark_impl<T: Config>(null_epochs: bool, expensive_pools
         let subnet_weights = dense_benchmark_weights(neuron_count);
 
         Subtensor::<T>::init_new_network(netuid, TEMPO);
+        // Measure dynamic PoW price writes on every live subnet, including
+        // disabled PoW admission, rather than a floor-only no-write fixture.
+        Subtensor::<T>::set_min_difficulty(netuid, 1);
+        Subtensor::<T>::set_max_difficulty(netuid, u64::MAX);
+        Subtensor::<T>::set_difficulty(netuid, u64::MAX);
+
         if null_epochs && epoch_is_due_this_block {
             Subtensor::<T>::set_epoch_consensus(netuid, EpochConsensus::Null);
         }

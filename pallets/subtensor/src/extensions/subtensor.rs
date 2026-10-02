@@ -381,7 +381,11 @@ where
                     work_block, hotkey, ..
                 }) = call.is_sub_type()
                 {
-                    validity.longevity = 2;
+                    validity.longevity = crate::subnets::registration::POW_MAX_WORK_AGE_BLOCKS
+                        .saturating_sub(
+                            Pallet::<T>::get_current_block_as_u64().saturating_sub(*work_block),
+                        )
+                        .saturating_add(1);
                     validity
                         .provides
                         .push((b"pow-registration", hotkey, work_block).encode());
