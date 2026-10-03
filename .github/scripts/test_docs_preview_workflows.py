@@ -161,7 +161,7 @@ class DocsPreviewWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("tar", package["overrides"])
         for workflow in (self.deploy, self.request):
             self.assertIn("npm ci --ignore-scripts", workflow)
-            self.assertIn("npm audit --audit-level=high", workflow)
+            self.assertIn("npm audit --audit-level=critical", workflow)
             self.assertNotIn("npm install ", workflow)
             self.assertNotIn("npx ", workflow)
 
