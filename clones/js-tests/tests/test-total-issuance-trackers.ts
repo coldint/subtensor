@@ -295,10 +295,15 @@ async function exerciseSubnetDeregistrationByRegistration() {
 async function exerciseEvmContractFees() {
   await ensureEvmWhitelistDisabled();
   const baseFeeStorage = api.query.baseFee?.baseFeePerGas;
+  const elasticityStorage = api.query.baseFee?.elasticity;
   assert.ok(baseFeeStorage, "BaseFee.BaseFeePerGas storage is unavailable");
+  assert.ok(elasticityStorage, "BaseFee.Elasticity storage is unavailable");
   await sudoSetStorage(
-    [[baseFeeStorage.key(), storageValueHex("U256", EVM_BASE_FEE)]],
-    "sudo normalize EVM base fee",
+    [
+      [baseFeeStorage.key(), storageValueHex("U256", EVM_BASE_FEE)],
+      [elasticityStorage.key(), storageValueHex("Permill", 0)],
+    ],
+    "sudo normalize EVM base fee fixture",
   );
   const wallet = getEvmWallet();
   const provider = new ethers.JsonRpcProvider(ETH_RPC_ENDPOINT);
