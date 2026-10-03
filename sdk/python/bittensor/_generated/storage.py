@@ -254,6 +254,7 @@ class SubtensorModule:
     CurrentDissolveCleanupStatus = Item('SubtensorModule', 'CurrentDissolveCleanupStatus', 'DissolveCleanupStatus')
     NetworkRegistrationQueue = Item('SubtensorModule', 'NetworkRegistrationQueue', 'Vec<NetworkRegistrationInfo>')
     NetworkRegistrationLockId = Item('SubtensorModule', 'NetworkRegistrationLockId', 'u32')
+    NetworkRegistrationEscrow = Item('SubtensorModule', 'NetworkRegistrationEscrow', '(AccountId32, TaoBalance)')
     VotingPower = Item('SubtensorModule', 'VotingPower', 'u64')
     TotalVotingPower = Item('SubtensorModule', 'TotalVotingPower', 'u64')
     VotingPowerTrackingEnabled = Item('SubtensorModule', 'VotingPowerTrackingEnabled', 'bool')
