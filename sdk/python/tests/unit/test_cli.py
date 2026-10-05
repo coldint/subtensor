@@ -72,6 +72,57 @@ def invoke(*args: str):
     return runner.invoke(app, list(args))
 
 
+def test_trim_null_uses_existing_submission_and_finalized_receipts(fake, monkeypatch, wallet_dir):
+    from dataclasses import replace
+
+    from bittensor.cli import null_pruning
+    from bittensor.result import ExtrinsicResult
+
+    owner = wallets.open_wallet(_WALLET_NAME, "default", wallet_dir).coldkeypub.ss58_address
+    current = null_pruning.PruningState(
+        100, "0xgenesis", owner, 320, None, 1, 64, 2500, "Null", False
+    )
+
+    async def read(_client, _netuid):
+        return current
+
+    async def submit(call, keypair, **options):
+        nonlocal current
+        assert options["wait_for_finalization"] is True
+        assert call.function == "sudo_trim_null_uids_batch"
+        assert call.params == {"netuid": 1, "target": 256}
+        current = replace(current, population=256)
+        fake.submissions.append((call, keypair.ss58_address, options))
+        return ExtrinsicResult(
+            success=True,
+            block_hash="0xfinalized",
+            extrinsic_id="101-0001",
+            events=[
+                {
+                    "event": {
+                        "module_id": "SubtensorModule",
+                        "event_id": "NullUidsPruningProgress",
+                        "attributes": {
+                            "netuid": 1,
+                            "target": 256,
+                            "remaining": 256,
+                            "removed": 64,
+                            "cleared_commits": 0,
+                        },
+                    }
+                }
+            ],
+        )
+
+    monkeypatch.setattr(null_pruning, "read_state", read)
+    monkeypatch.setattr(fake, "submit", submit)
+    result = invoke("hparams", "trim-null", "--netuid", "1", "--yes")
+    assert result.exit_code == 0, result.output
+    assert len(fake.submissions) == 1
+    assert "Pruning progress" in result.output
+    assert "finalized" in result.output
+
+
 def seed_root_validator_summary(fake: FakeSubstrate) -> None:
     fake.seed_runtime(
         "BetaBasketRuntimeApi",

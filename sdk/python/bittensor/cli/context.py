@@ -905,6 +905,9 @@ class AppContext:
         summary: Optional[str] = None,
         summary_note: Optional[str] = None,
         card_sections: Optional[list[tuple[str, list[tuple]]]] = None,
+        wait_for_finalization: bool = False,
+        before_submit: Optional[Callable[[], None]] = None,
+        on_result: Optional[Callable[[ExtrinsicResult], None]] = None,
     ) -> Optional[ExtrinsicResult]:
         """Run a mutation with a uniform dry-run / confirm / execute / render flow.
 
@@ -928,6 +931,11 @@ class AppContext:
         When omitted, the ``--proxy-for`` tx-global (if set) then the persistent
         ``proxy_for`` config value is used; the sentinel ``self`` bypasses that
         default and signs directly.
+
+        Sequential workflows may request finalization and use ``before_submit``
+        to persist a recovery record after confirmation, before execution.
+        ``on_result`` receives the receipt before rendering can exit on failure.
+        Neither callback runs during a dry-run.
 
         Stake-trading intents (``mev_shield_default``) are submitted
         MEV-shielded via ``client.submit_shielded`` unless the user opts out
@@ -965,6 +973,9 @@ class AppContext:
                 summary=summary,
                 summary_note=summary_note,
                 card_sections=card_sections,
+                wait_for_finalization=wait_for_finalization,
+                before_submit=before_submit,
+                on_result=on_result,
             )
 
         # ``-w <multisig>``: rewrite the intent as a multisig approval signed
@@ -1475,9 +1486,11 @@ class AppContext:
                 await self._prepare_two_stage_signer(signer)
             result = None
             try:
+                if before_submit is not None:
+                    before_submit()
                 if use_shield:
                     shield_options = {
-                        "wait_for_finalization": False,
+                        "wait_for_finalization": wait_for_finalization,
                         **options,
                     }
                     if intent.op == "register_subnet":
@@ -1489,7 +1502,7 @@ class AppContext:
                     )
                 else:
                     execute_options = {
-                        "wait_for_finalization": False,
+                        "wait_for_finalization": wait_for_finalization,
                         **options,
                     }
                     if intent.op == "register_subnet":
@@ -1606,6 +1619,8 @@ class AppContext:
         else:
             with self.output.activity("submitting transaction…"):
                 result = self.run(_execute)
+        if on_result is not None:
+            on_result(result)
         if result.success and self.rounds_intermediate():
             # Chained run, and another approval follows immediately: a one-line
             # acknowledgment is enough. The full receipt and the co-signer

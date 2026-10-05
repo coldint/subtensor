@@ -56,7 +56,47 @@ clamped to the remaining UID capacity; setting Null again does not overwrite it.
 btcli hparams trim-null-batch --netuid 1 --target 256
 ```
 
-Repeat this command with the same target until `NullPruningTarget` is absent
+For a long-running return to Yuma, use the opt-in workflow:
+
+```bash
+btcli hparams trim-null --netuid 1 --switch-to-yuma
+```
+
+This derives the target as `floor(256 / mechanism_count)`, or resumes an existing
+on-chain pruning target. `--target` selects a smaller final population within the
+subnet's minimum and maximum. A conflicting pending target is rejected. Pruning
+deregisters participants and can change survivor UIDs; review the target before
+signing. Each batch uses the normal wallet, fee review, confirmation and receipt
+flow. Pass `--yes` to approve sequential submissions without individual prompts.
+Without `--switch-to-yuma`, the workflow only prunes and leaves consensus as Null.
+
+The workflow waits for each transaction to finalize and reads `NullPruningTarget`
+and `SubnetworkN` after every batch. It reports removed UIDs and cancelled commits,
+including cleanup-only batches. It polls closed administration windows every
+12 seconds, with a one-hour wait limit; `--poll-seconds` and `--wait-timeout` adjust
+these bounds. Initial trimming cooldown failures stop with an explanation rather
+than repeatedly submitting paid failures. Successful same-target continuations
+retain the runtime's cooldown exemption. `--max-batches` bounds the run to 256
+batches by default; repeated lack of progress also stops the loop. `--dry-run`
+previews one transaction without starting the loop's submissions.
+
+Ctrl-C stops waiting or further submissions. Rerun the command with the same
+target to resume from on-chain state. A recovery record beside the CLI config
+prevents another local workflow from silently resubmitting a transaction whose
+delivery is uncertain. `--state-file` selects its location. If interruption or a
+connection failure leaves an unresolved record, reconcile the transaction's
+inclusion or expiry on-chain before removing that record and restarting. Do not
+delete it merely because the population has not changed: a transaction may still
+be pending or may only cancel commits. Run one workflow per subnet, including
+across machines, and retain the same recovery-file location when restarting.
+
+With `--switch-to-yuma`, remaining timelocked commitments are cancelled through
+bounded batches before the switch; the workflow also waits for the consensus
+cooldown and administration window. It verifies the mode after the switch receipt.
+Ownership changes, mechanism-count changes, permanent transaction failures and
+incomplete multisig approvals stop the run so the owner can resolve them explicitly.
+
+For the single-batch command, repeat with the same target until `NullPruningTarget` is absent
 and `SubnetworkN` is at most the target. Each transaction deletes at most 64
 UIDs. Pending weight commits are cancelled before survivor UIDs move; a large
 legacy commit backlog can require cleanup-only transactions. Continuations
