@@ -2042,6 +2042,96 @@ fn test_payout_caches_preserve_live_balances_and_alpha_snapshot() {
 }
 
 #[test]
+fn test_dividend_records_replace_epoch_values_and_remove_departed_or_zero_recipients() {
+    new_test_ext(1).execute_with(|| {
+        let netuid = add_dynamic_network(&U256::from(1), &U256::from(2));
+        let hotkey = U256::from(10);
+        let owner = U256::from(20);
+        let departed = U256::from(99);
+        Owner::<Test>::insert(hotkey, owner);
+        SubtensorModule::append_neuron(netuid, &hotkey, 1);
+        SubtensorModule::set_epoch_consensus(netuid, EpochConsensus::Null);
+        Delegates::<Test>::insert(hotkey, PerU16::from_parts(0));
+        SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+            &hotkey,
+            &owner,
+            netuid,
+            100u64.into(),
+        );
+        AlphaDividendsPerSubnet::<Test>::insert(netuid, hotkey, AlphaBalance::from(999));
+        RootAlphaDividendsPerSubnet::<Test>::insert(netuid, hotkey, AlphaBalance::from(999));
+        AlphaDividendsPerSubnet::<Test>::insert(netuid, departed, AlphaBalance::from(999));
+        RootAlphaDividendsPerSubnet::<Test>::insert(netuid, departed, AlphaBalance::from(999));
+        for epoch in 1..=2u64 {
+            SubtensorModule::distribute_dividends_and_incentives(
+                netuid,
+                AlphaBalance::ZERO,
+                BTreeMap::new(),
+                BTreeMap::from([(hotkey, U96F32::from_num(10))]),
+                BTreeMap::from([(hotkey, U96F32::from_num(7))]),
+            );
+            // Unchanged records must not suppress the next epoch's real payout.
+            assert_eq!(
+                TotalHotkeyAlpha::<Test>::get(hotkey, netuid),
+                AlphaBalance::from(100 + epoch * 10)
+            );
+            assert_eq!(
+                AlphaDividendsPerSubnet::<Test>::get(netuid, hotkey),
+                AlphaBalance::from(10)
+            );
+            assert_eq!(
+                RootAlphaDividendsPerSubnet::<Test>::get(netuid, hotkey),
+                AlphaBalance::from(7)
+            );
+            assert_eq!(
+                PendingBasketDeposits::<Test>::get(hotkey, netuid),
+                AlphaBalance::from(epoch * 7)
+            );
+            assert!(!AlphaDividendsPerSubnet::<Test>::contains_key(
+                netuid, departed
+            ));
+            assert!(!RootAlphaDividendsPerSubnet::<Test>::contains_key(
+                netuid, departed
+            ));
+        }
+        Delegates::<Test>::insert(hotkey, PerU16::from_parts(u16::MAX));
+        SubtensorModule::distribute_dividends_and_incentives(
+            netuid,
+            AlphaBalance::ZERO,
+            BTreeMap::new(),
+            BTreeMap::from([(hotkey, U96F32::from_num(10))]),
+            BTreeMap::from([(hotkey, U96F32::from_num(7))]),
+        );
+        assert!(!AlphaDividendsPerSubnet::<Test>::contains_key(
+            netuid, hotkey
+        ));
+        assert!(!RootAlphaDividendsPerSubnet::<Test>::contains_key(
+            netuid, hotkey
+        ));
+        AlphaDividendsPerSubnet::<Test>::insert(netuid, departed, AlphaBalance::from(1));
+        RootAlphaDividendsPerSubnet::<Test>::insert(netuid, departed, AlphaBalance::from(1));
+        SubtensorModule::distribute_dividends_and_incentives(
+            netuid,
+            AlphaBalance::ZERO,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        assert!(
+            AlphaDividendsPerSubnet::<Test>::iter_prefix(netuid)
+                .next()
+                .is_none()
+        );
+        assert!(
+            RootAlphaDividendsPerSubnet::<Test>::iter_prefix(netuid)
+                .next()
+                .is_none()
+        );
+        assert_total_alpha_staked_invariant(netuid);
+    });
+}
+
+#[test]
 fn test_owner_membership_set_preserves_withheld_emission_for_unsorted_and_duplicate_keys() {
     new_test_ext(1).execute_with(|| {
         let owner = U256::from(1);

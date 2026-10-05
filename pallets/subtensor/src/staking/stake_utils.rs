@@ -782,9 +782,10 @@ impl<T: Config> Pallet<T> {
             && StakingHotkeys::<T>::get(coldkey).contains(hotkey)
         {
             let mut pool = Self::get_alpha_share_pool(hotkey.clone(), netuid);
-            if pool.try_credit_sole_member(coldkey, amount.to_u64()) {
-                return;
-            }
+            // Membership was checked above, so the general fallback need not
+            // reload the staking index or the pool inputs after a failed probe.
+            pool.credit_member(coldkey, amount.to_u64());
+            return;
         }
         Self::increase_stake_for_hotkey_and_coldkey_on_subnet(hotkey, coldkey, netuid, amount);
     }

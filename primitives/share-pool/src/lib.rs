@@ -497,6 +497,31 @@ where
         true
     }
 
+    /// Credit a sole member directly or use the ordinary deposit arithmetic,
+    /// retaining the inputs of the eligibility check for a shared-pool fallback.
+    /// The inputs live only within this operation; later payouts read fresh state.
+    pub fn credit_member(&mut self, key: &K, amount: u64) {
+        if amount == 0 {
+            return;
+        }
+        let value = self.state_ops.get_shared_value();
+        let denominator = self.state_ops.get_denominator();
+        let share = if value > 0 && !denominator.is_zero() {
+            self.state_ops.try_get_share(key).ok()
+        } else {
+            None
+        };
+        if value > 0
+            && !denominator.is_zero()
+            && share.as_ref() == Some(&denominator)
+            && let Some(new_value) = value.checked_add(amount)
+        {
+            self.state_ops.set_shared_value(new_value);
+            return;
+        }
+        self.update_value_for_one_with_inputs(key, amount as i64, value, denominator, share);
+    }
+
     /// Value of one member's shares: `floor(V * S / D)`, capped at `V`.
     ///
     /// The cap is a correctness invariant, not a workaround. Every member's shares `S` are a
@@ -624,7 +649,18 @@ where
     ///   deposit re-opens it.
     pub fn update_value_for_one(&mut self, key: &K, update: i64) {
         let shared_value: u64 = self.state_ops.get_shared_value();
-        let mut denominator: SafeFloat = self.state_ops.get_denominator();
+        let denominator: SafeFloat = self.state_ops.get_denominator();
+        self.update_value_for_one_with_inputs(key, update, shared_value, denominator, None);
+    }
+
+    fn update_value_for_one_with_inputs(
+        &mut self,
+        key: &K,
+        update: i64,
+        shared_value: u64,
+        mut denominator: SafeFloat,
+        share: Option<SafeFloat>,
+    ) {
         let magnitude: u64 = update.unsigned_abs();
 
         if update > 0 && shared_value == 0 && !denominator.is_zero() {
@@ -644,7 +680,7 @@ where
                 self.state_ops.set_share(key, update_float);
             }
         } else {
-            let current_share: SafeFloat = self.state_ops.get_share(key);
+            let current_share = share.unwrap_or_else(|| self.state_ops.get_share(key));
             let shares_per_update: SafeFloat =
                 self.get_shares_per_update(update, shared_value, &denominator);
 
@@ -781,11 +817,13 @@ mod tests {
     use std::collections::BTreeMap;
     use substrate_fixed::types::U64F64;
 
+    #[derive(Clone)]
     struct MockSharePoolDataOperations {
         shared_value: u64,
         share: BTreeMap<u16, SafeFloat>,
         denominator: SafeFloat,
         writes: [usize; 3],
+        reads: [core::cell::Cell<usize>; 3],
     }
 
     impl MockSharePoolDataOperations {
@@ -795,20 +833,24 @@ mod tests {
                 share: BTreeMap::new(),
                 denominator: SafeFloat::zero(),
                 writes: [0; 3],
+                reads: Default::default(),
             }
         }
     }
 
     impl SharePoolDataOperations<u16> for MockSharePoolDataOperations {
         fn get_shared_value(&self) -> u64 {
+            self.reads[0].set(self.reads[0].get() + 1);
             self.shared_value
         }
 
         fn get_share(&self, key: &u16) -> SafeFloat {
+            self.reads[1].set(self.reads[1].get() + 1);
             self.share.get(key).cloned().unwrap_or_else(SafeFloat::zero)
         }
 
         fn try_get_share(&self, key: &u16) -> Result<SafeFloat, ()> {
+            self.reads[1].set(self.reads[1].get() + 1);
             match self.share.get(key).cloned() {
                 Some(value) => Ok(value),
                 None => Err(()),
@@ -816,6 +858,7 @@ mod tests {
         }
 
         fn get_denominator(&self) -> SafeFloat {
+            self.reads[2].set(self.reads[2].get() + 1);
             self.denominator.clone()
         }
 
@@ -885,6 +928,87 @@ mod tests {
         assert_eq!(fast.get_value(&1), ordinary.get_value(&1));
         assert_eq!(fast.state_ops.writes, [1, 0, 0]);
         assert_eq!(ordinary.state_ops.writes, [1, 1, 1]);
+    }
+
+    #[test]
+    fn shared_member_credit_reuses_probe_inputs_and_matches_general_deposit() {
+        let mut original = SharePool::new(MockSharePoolDataOperations::new());
+        original.update_value_for_one(&1, 1_000);
+        original.update_value_for_one(&2, 1_000);
+        for read in &original.state_ops.reads {
+            read.set(0);
+        }
+        let mut optimized = SharePool::new(original.state_ops.clone());
+        assert!(!original.try_credit_sole_member(&1, 123));
+        original.update_value_for_one(&1, 123);
+        optimized.credit_member(&1, 123);
+        assert_eq!(
+            original.state_ops.reads.each_ref().map(|read| read.get()),
+            [3, 2, 2]
+        );
+        assert_eq!(
+            optimized.state_ops.reads.each_ref().map(|read| read.get()),
+            [2, 1, 1]
+        );
+        assert_eq!(
+            optimized.state_ops.shared_value,
+            original.state_ops.shared_value
+        );
+        assert_eq!(
+            optimized.state_ops.denominator,
+            original.state_ops.denominator
+        );
+        assert_eq!(optimized.state_ops.share, original.state_ops.share);
+    }
+
+    #[test]
+    fn member_credit_preserves_rounding_reopening_and_overflow_fallback() {
+        for seed in [1i64, 1_000, 1_000_000_000, 1_000_000_000_000] {
+            for shared in [false, true] {
+                for empty_value in [false, true] {
+                    let mut original = SharePool::new(MockSharePoolDataOperations::new());
+                    original.update_value_for_one(&1, seed);
+                    if shared {
+                        original.update_value_for_one(&2, seed);
+                    }
+                    if empty_value {
+                        original.state_ops.shared_value = 0;
+                    }
+                    let mut optimized = SharePool::new(original.state_ops.clone());
+                    for (who, reward) in [(1, 0), (1, 1), (1, 17), (3, 37), (2, 999_999_999)] {
+                        if !original.try_credit_sole_member(&who, reward) {
+                            original.update_value_for_one(&who, reward as i64);
+                        }
+                        optimized.credit_member(&who, reward);
+                        assert_eq!(
+                            optimized.state_ops.shared_value,
+                            original.state_ops.shared_value
+                        );
+                        assert_eq!(
+                            optimized.state_ops.denominator,
+                            original.state_ops.denominator
+                        );
+                        assert_eq!(optimized.state_ops.share, original.state_ops.share);
+                    }
+                }
+            }
+        }
+        let mut original = SharePool::new(MockSharePoolDataOperations::new());
+        original.update_value_for_one(&1, 100);
+        original.state_ops.shared_value = u64::MAX;
+        let mut optimized = SharePool::new(original.state_ops.clone());
+        assert!(!original.try_credit_sole_member(&1, 1));
+        original.update_value_for_one(&1, 1);
+        optimized.credit_member(&1, 1);
+        assert_eq!(
+            optimized.state_ops.shared_value,
+            original.state_ops.shared_value
+        );
+        assert_eq!(
+            optimized.state_ops.denominator,
+            original.state_ops.denominator
+        );
+        assert_eq!(optimized.state_ops.share, original.state_ops.share);
     }
 
     #[test]

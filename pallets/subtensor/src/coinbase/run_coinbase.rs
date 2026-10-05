@@ -850,7 +850,18 @@ impl<T: Config> Pallet<T> {
         // shares can never be floor-captured into owner collateral. Full
         // dividend emission still drives release rate / earned; only the
         // validator take is capturable.
-        let _ = AlphaDividendsPerSubnet::<T>::clear_prefix(netuid, u32::MAX, None);
+        // Preserve retained records and overwrite their epoch value directly.
+        // Collect departures before deleting to avoid mutating an active iterator.
+        let departed = AlphaDividendsPerSubnet::<T>::iter_key_prefix(netuid)
+            .filter(|hotkey| {
+                alpha_dividends
+                    .get(hotkey)
+                    .is_none_or(|dividend| *dividend == U96F32::from_num(0))
+            })
+            .collect::<Vec<_>>();
+        for hotkey in departed {
+            AlphaDividendsPerSubnet::<T>::remove(netuid, hotkey);
+        }
         for (hotkey, alpha_divs) in alpha_dividends {
             let owner = Self::payout_owner(&hotkey, &mut owners, cache_limit);
             let total: AlphaBalance = tou64!(alpha_divs).into();
@@ -889,9 +900,15 @@ impl<T: Config> Pallet<T> {
                         nominator_alpha,
                     );
                 }
-                AlphaDividendsPerSubnet::<T>::mutate(netuid, &hotkey, |divs| {
-                    *divs = divs.saturating_add(nominator_alpha);
-                });
+                if AlphaDividendsPerSubnet::<T>::try_get(netuid, &hotkey).ok()
+                    != Some(nominator_alpha)
+                {
+                    AlphaDividendsPerSubnet::<T>::insert(netuid, &hotkey, nominator_alpha);
+                }
+            } else if alpha_divs != U96F32::from_num(0)
+                && AlphaDividendsPerSubnet::<T>::contains_key(netuid, &hotkey)
+            {
+                AlphaDividendsPerSubnet::<T>::remove(netuid, &hotkey);
             }
             let total_hotkey_alpha = TotalHotkeyAlpha::<T>::get(&hotkey, netuid);
             if total_hotkey_alpha.is_zero() {
@@ -903,7 +920,16 @@ impl<T: Config> Pallet<T> {
 
         // Distribute root alpha divs. Same ownership rule: full root emission
         // for release/earned; only validator take is capturable.
-        let _ = RootAlphaDividendsPerSubnet::<T>::clear_prefix(netuid, u32::MAX, None);
+        let departed = RootAlphaDividendsPerSubnet::<T>::iter_key_prefix(netuid)
+            .filter(|hotkey| {
+                root_alpha_dividends
+                    .get(hotkey)
+                    .is_none_or(|dividend| *dividend == U96F32::from_num(0))
+            })
+            .collect::<Vec<_>>();
+        for hotkey in departed {
+            RootAlphaDividendsPerSubnet::<T>::remove(netuid, hotkey);
+        }
 
         for (hotkey, root_alpha) in root_alpha_dividends {
             let owner = Self::payout_owner(&hotkey, &mut owners, cache_limit);
@@ -937,7 +963,15 @@ impl<T: Config> Pallet<T> {
                 // validators x holdings quotes.
                 Self::enqueue_basket_deposit(&hotkey, netuid, root_claimable_alpha);
 
-                RootAlphaDividendsPerSubnet::<T>::insert(netuid, &hotkey, root_claimable_alpha);
+                if RootAlphaDividendsPerSubnet::<T>::try_get(netuid, &hotkey).ok()
+                    != Some(root_claimable_alpha)
+                {
+                    RootAlphaDividendsPerSubnet::<T>::insert(netuid, &hotkey, root_claimable_alpha);
+                }
+            } else if root_alpha != U96F32::from_num(0)
+                && RootAlphaDividendsPerSubnet::<T>::contains_key(netuid, &hotkey)
+            {
+                RootAlphaDividendsPerSubnet::<T>::remove(netuid, &hotkey);
             }
         }
     }
