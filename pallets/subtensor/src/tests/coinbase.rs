@@ -1996,6 +1996,100 @@ fn test_get_root_children_drain_with_half_take() {
 
 // SKIP_WASM_BUILD=1 RUST_LOG=debug cargo test --package pallet-subtensor --lib -- tests::coinbase::test_incentive_to_subnet_owner_is_burned --exact --show-output --nocapture
 #[test]
+fn test_payout_caches_preserve_live_balances_and_alpha_snapshot() {
+    for mode in [EpochConsensus::Yuma, EpochConsensus::Null] {
+        new_test_ext(1).execute_with(|| {
+            let netuid = add_dynamic_network(&U256::from(1), &U256::from(2));
+            remove_owner_registration_stake(netuid);
+            SubtensorModule::set_epoch_consensus(netuid, mode);
+            let hotkey = U256::from(10);
+            let owner = U256::from(20);
+            Owner::<Test>::insert(hotkey, owner);
+            SubtensorModule::append_neuron(netuid, &hotkey, 1);
+            Delegates::<Test>::insert(hotkey, PerU16::from_parts(u16::MAX));
+            SubtensorModule::increase_stake_for_hotkey_and_coldkey_on_subnet(
+                &hotkey,
+                &owner,
+                netuid,
+                100u64.into(),
+            );
+            let mut incentives = BTreeMap::from([(hotkey, AlphaBalance::from(11))]);
+            let zero_hotkey = U256::from(99);
+            incentives.insert(zero_hotkey, AlphaBalance::ZERO);
+            let before_events = System::events().len();
+            SubtensorModule::distribute_dividends_and_incentives(
+                netuid,
+                AlphaBalance::ZERO,
+                incentives,
+                BTreeMap::from([(hotkey, U96F32::from_num(13))]),
+                BTreeMap::from([(hotkey, U96F32::from_num(17))]),
+            );
+            assert_eq!(
+                TotalHotkeyAlpha::<Test>::get(hotkey, netuid),
+                AlphaBalance::from(141)
+            );
+            // The snapshot is taken after local payouts but before root payouts.
+            assert_eq!(
+                TotalHotkeyAlphaLastEpoch::<Test>::get(hotkey, netuid),
+                AlphaBalance::from(124)
+            );
+            assert!(!Owner::<Test>::contains_key(zero_hotkey));
+            assert!(!TotalHotkeyAlpha::<Test>::contains_key(zero_hotkey, netuid));
+            assert_eq!(System::events().len(), before_events);
+            assert_total_alpha_staked_invariant(netuid);
+        });
+    }
+}
+
+#[test]
+fn test_owner_membership_set_preserves_withheld_emission_for_unsorted_and_duplicate_keys() {
+    new_test_ext(1).execute_with(|| {
+        let owner = U256::from(1);
+        let primary = U256::from(2);
+        let netuid = add_dynamic_network(&primary, &owner);
+        remove_owner_registration_stake(netuid);
+        let mut owned = Vec::new();
+        let mut incentives = BTreeMap::from([(primary, AlphaBalance::from(10))]);
+        for id in (10..26u64).rev() {
+            let hotkey = U256::from(id);
+            Owner::<Test>::insert(hotkey, owner);
+            SubtensorModule::append_neuron(netuid, &hotkey, id);
+            owned.push(hotkey);
+            incentives.insert(hotkey, AlphaBalance::from(10));
+        }
+        owned.push(U256::from(10)); // duplicates must not change membership
+        let unregistered = U256::from(99);
+        Owner::<Test>::insert(unregistered, owner);
+        owned.push(unregistered);
+        OwnedHotkeys::<Test>::insert(owner, owned); // primary deliberately absent
+        incentives.insert(unregistered, AlphaBalance::from(170));
+        SubtensorModule::distribute_dividends_and_incentives(
+            netuid,
+            AlphaBalance::ZERO,
+            incentives,
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        assert_eq!(MinerBurned::<Test>::get(netuid), U96F32::from_num(0.5));
+        assert_eq!(
+            TotalHotkeyAlpha::<Test>::get(unregistered, netuid),
+            AlphaBalance::from(170)
+        );
+        assert_eq!(
+            TotalHotkeyAlpha::<Test>::get(primary, netuid),
+            AlphaBalance::ZERO
+        );
+        for id in 10..26u64 {
+            assert_eq!(
+                TotalHotkeyAlpha::<Test>::get(U256::from(id), netuid),
+                AlphaBalance::ZERO
+            );
+        }
+        assert_total_alpha_staked_invariant(netuid);
+    });
+}
+
+#[test]
 fn test_incentive_to_subnet_owner_is_burned() {
     new_test_ext(1).execute_with(|| {
         let subnet_owner_ck = U256::from(0);

@@ -680,37 +680,41 @@ impl<T: Config> Pallet<T> {
         (prop_alpha_dividends, root_alpha_dividends)
     }
 
-    fn get_owner_hotkeys(netuid: NetUid, coldkey: &T::AccountId) -> Vec<T::AccountId> {
-        // Gather (block, uid, hotkey) only for hotkeys that have a UID and a registration block.
-        let mut triples: Vec<(u64, u16, T::AccountId)> = OwnedHotkeys::<T>::get(coldkey)
+    fn get_owner_hotkeys(netuid: NetUid, coldkey: &T::AccountId) -> BTreeSet<T::AccountId> {
+        // Payouts only test membership: registration-time ordering is unused.
+        let mut owner_hotkeys: BTreeSet<T::AccountId> = OwnedHotkeys::<T>::get(coldkey)
             .into_iter()
-            .filter_map(|hotkey| {
-                // Uids must exist, filter_map ignores hotkeys without UID
-                Uids::<T>::get(netuid, &hotkey).map(|uid| {
-                    let block = BlockAtRegistration::<T>::get(netuid, uid);
-                    (block, uid, hotkey)
-                })
-            })
+            .filter(|hotkey| Uids::<T>::contains_key(netuid, hotkey))
             .collect();
-
-        // Sort by BlockAtRegistration (descending), then by uid (ascending)
-        // Recent registration is priority so that we can let older keys expire (get non-immune)
-        triples.sort_by(|(b1, u1, _), (b2, u2, _)| b2.cmp(b1).then(u1.cmp(u2)));
-
-        // Project to just hotkeys
-        let mut owner_hotkeys: Vec<T::AccountId> =
-            triples.into_iter().map(|(_, _, hk)| hk).collect();
-
-        // Insert subnet owner hotkey in the beginning of the list if valid and not
-        // already present
         if let Ok(owner_hk) = SubnetOwnerHotkey::<T>::try_get(netuid)
-            && Uids::<T>::get(netuid, &owner_hk).is_some()
-            && !owner_hotkeys.contains(&owner_hk)
+            && Uids::<T>::contains_key(netuid, &owner_hk)
         {
-            owner_hotkeys.insert(0, owner_hk);
+            owner_hotkeys.insert(owner_hk);
         }
 
         owner_hotkeys
+    }
+
+    /// Cache only established ownership associations, which do not change during
+    /// settlement. Missing associations stay uncached: a preceding deposit can
+    /// create them. Bound retained identities by this subnet's UID population.
+    fn payout_owner(
+        hotkey: &T::AccountId,
+        owners: &mut BTreeMap<T::AccountId, T::AccountId>,
+        limit: usize,
+    ) -> T::AccountId {
+        if let Some(owner) = owners.get(hotkey) {
+            return owner.clone();
+        }
+        match Owner::<T>::try_get(hotkey) {
+            Ok(owner) => {
+                if owners.len() < limit {
+                    owners.insert(hotkey.clone(), owner.clone());
+                }
+                owner
+            }
+            Err(_) => DefaultAccount::<T>::get(),
+        }
     }
 
     pub fn distribute_dividends_and_incentives(
@@ -720,8 +724,9 @@ impl<T: Config> Pallet<T> {
         alpha_dividends: BTreeMap<T::AccountId, U96F32>,
         root_alpha_dividends: BTreeMap<T::AccountId, U96F32>,
     ) {
+        let subnet_owner = SubnetOwner::<T>::try_get(netuid).ok();
         // Distribute the owner cut.
-        if let Ok(owner_coldkey) = SubnetOwner::<T>::try_get(netuid)
+        if let Some(owner_coldkey) = subnet_owner.as_ref()
             && let Ok(owner_hotkey) = SubnetOwnerHotkey::<T>::try_get(netuid)
         {
             // Increase stake for owner hotkey and coldkey.
@@ -730,7 +735,7 @@ impl<T: Config> Pallet<T> {
             );
             Self::increase_stake_for_hotkey_and_coldkey_on_subnet(
                 &owner_hotkey,
-                &owner_coldkey,
+                owner_coldkey,
                 netuid,
                 owner_cut,
             );
@@ -749,14 +754,22 @@ impl<T: Config> Pallet<T> {
         }
 
         // Distribute mining incentives.
-        let subnet_owner_coldkey = SubnetOwner::<T>::get(netuid);
+        let subnet_owner_coldkey = subnet_owner.unwrap_or_else(DefaultAccount::<T>::get);
         let owner_hotkeys = Self::get_owner_hotkeys(netuid, &subnet_owner_coldkey);
+        let is_null = Self::get_epoch_consensus(netuid) == EpochConsensus::Null;
+        let cache_limit = usize::from(Self::get_subnetwork_n(netuid));
+        let mut owners = BTreeMap::new();
+        let mut takes = BTreeMap::new();
+        let mut recycle_or_burn = None;
         log::debug!("incentives: owner hotkeys: {owner_hotkeys:?}");
         // Track total miner emission vs the portion withheld from miners this tempo
         // (directed to an owner/immune hotkey) to record the withheld proportion.
         let mut total_incentive: AlphaBalance = AlphaBalance::ZERO;
         let mut withheld_incentive: AlphaBalance = AlphaBalance::ZERO;
         for (hotkey, incentive) in incentives {
+            if incentive.is_zero() {
+                continue;
+            }
             log::debug!("incentives: hotkey: {incentive:?}");
             total_incentive = total_incentive.saturating_add(incentive);
 
@@ -771,12 +784,14 @@ impl<T: Config> Pallet<T> {
                 // and an unset RecycleOrBurn config is not uniquely penalized.
                 withheld_incentive = withheld_incentive.saturating_add(incentive);
                 // Check if we should recycle or burn the incentive
-                match RecycleOrBurn::<T>::try_get(netuid) {
-                    Ok(RecycleOrBurnEnum::Recycle) => {
+                match recycle_or_burn.get_or_insert_with(|| {
+                    RecycleOrBurn::<T>::try_get(netuid).unwrap_or(RecycleOrBurnEnum::Burn)
+                }) {
+                    RecycleOrBurnEnum::Recycle => {
                         log::debug!("recycling {incentive:?}");
                         Self::recycle_subnet_alpha(netuid, incentive);
                     }
-                    Ok(RecycleOrBurnEnum::Burn) | Err(_) => {
+                    RecycleOrBurnEnum::Burn => {
                         log::debug!("burning {incentive:?}");
                         Self::burn_subnet_alpha(netuid, incentive);
                     }
@@ -784,7 +799,7 @@ impl<T: Config> Pallet<T> {
                 continue;
             }
 
-            let owner: T::AccountId = Owner::<T>::get(&hotkey);
+            let owner = Self::payout_owner(&hotkey, &mut owners, cache_limit);
 
             // Settle collateral first: below a miner-set floor, part of the
             // emission is captured into the lock (staked to the registered
@@ -815,7 +830,13 @@ impl<T: Config> Pallet<T> {
                 });
             }
 
-            Self::credit_epoch_owner_emission(&destination, &owner, netuid, liquid);
+            Self::credit_epoch_owner_emission_for_mode(
+                &destination,
+                &owner,
+                netuid,
+                liquid,
+                is_null,
+            );
         }
 
         // Record the proportion of this tempo's miner emission that was withheld from
@@ -831,17 +852,26 @@ impl<T: Config> Pallet<T> {
         // validator take is capturable.
         let _ = AlphaDividendsPerSubnet::<T>::clear_prefix(netuid, u32::MAX, None);
         for (hotkey, alpha_divs) in alpha_dividends {
-            let owner: T::AccountId = Owner::<T>::get(&hotkey);
+            let owner = Self::payout_owner(&hotkey, &mut owners, cache_limit);
             let total: AlphaBalance = tou64!(alpha_divs).into();
-            let alpha_take: U96F32 =
-                Self::get_hotkey_take_float(&hotkey).saturating_mul(alpha_divs);
+            let take_fraction = Self::get_hotkey_take_float(&hotkey);
+            if takes.len() < cache_limit {
+                takes.insert(hotkey.clone(), take_fraction);
+            }
+            let alpha_take = take_fraction.saturating_mul(alpha_divs);
             let nominator_divs: U96F32 = alpha_divs.saturating_sub(alpha_take);
             let take: AlphaBalance = tou64!(alpha_take).into();
             let captured = Self::settle_miner_collateral(netuid, &hotkey, &owner, total, take);
             let liquid_take = take.saturating_sub(captured);
             if !liquid_take.is_zero() {
                 log::debug!("hotkey: {hotkey:?} alpha_take: {liquid_take:?}");
-                Self::credit_epoch_owner_emission(&hotkey, &owner, netuid, liquid_take);
+                Self::credit_epoch_owner_emission_for_mode(
+                    &hotkey,
+                    &owner,
+                    netuid,
+                    liquid_take,
+                    is_null,
+                );
             }
             let nominator_alpha: AlphaBalance = tou64!(nominator_divs).into();
             if !nominator_alpha.is_zero() {
@@ -876,10 +906,13 @@ impl<T: Config> Pallet<T> {
         let _ = RootAlphaDividendsPerSubnet::<T>::clear_prefix(netuid, u32::MAX, None);
 
         for (hotkey, root_alpha) in root_alpha_dividends {
-            let owner: T::AccountId = Owner::<T>::get(&hotkey);
+            let owner = Self::payout_owner(&hotkey, &mut owners, cache_limit);
             let total: AlphaBalance = tou64!(root_alpha).into();
-            let alpha_take: U96F32 =
-                Self::get_hotkey_take_float(&hotkey).saturating_mul(root_alpha);
+            let take_fraction = takes
+                .get(&hotkey)
+                .copied()
+                .unwrap_or_else(|| Self::get_hotkey_take_float(&hotkey));
+            let alpha_take = take_fraction.saturating_mul(root_alpha);
             let root_claimable: U96F32 = root_alpha.saturating_sub(alpha_take);
             let take: AlphaBalance = tou64!(alpha_take).into();
             let captured = Self::settle_miner_collateral(netuid, &hotkey, &owner, total, take);
