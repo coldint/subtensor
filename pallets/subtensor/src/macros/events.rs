@@ -879,6 +879,19 @@ mod events {
             /// Estimated TAO value of the claimant's slices of those rows, left in the fund.
             forfeited_tao_est: TaoBalance,
         },
+
+        /// A queued registration failed terminally; its escrow was refunded or
+        /// its pre-upgrade balance lock was released. No subnet was created.
+        NetworkRegistrationCancelled {
+            /// Registrant whose escrow was refunded or legacy lock released.
+            coldkey: T::AccountId,
+            /// Intended subnet owner hotkey.
+            hotkey: T::AccountId,
+            /// Identifier of the cancelled queue entry.
+            lock_id: u32,
+            /// Settlement failure that triggered cancellation.
+            error: DispatchError,
+        },
         /// The subnet owner or root selected a new epoch reward algorithm.
         EpochConsensusSet(NetUid, EpochConsensus),
         /// A bounded explicit pruning step either cancelled queued weights or removed UIDs.

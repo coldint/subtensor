@@ -15,7 +15,7 @@
       "path-to-regexp": "8.4.2"
     },
     "@vercel/python-analysis": {
-      "minimatch": "10.2.5"
+      "minimatch": "10.2.6"
     },
     "@vercel/remix-builder": {
       "path-to-regexp": "6.3.0"
@@ -24,7 +24,7 @@
     "brace-expansion": "5.0.12",
     "fast-uri": "3.1.8",
     "js-yaml": "4.3.2",
-    "minimatch": "10.2.5",
+    "minimatch": "10.2.6",
     "path-to-regexp": "8.4.2",
     "smol-toml": "1.8.0",
     "tar": "7.5.22",
