@@ -115,40 +115,6 @@ fn null_cached_stake_matches_original_delegation_arithmetic() {
 }
 
 #[test]
-fn null_external_parent_cache_overflow_preserves_stake_and_refreshes_between_epochs() {
-    new_test_ext(1).execute_with(|| {
-        let netuid = setup([300_000_000, 100_000_000]);
-        let parents = (100..108u64)
-            .map(|id| {
-                let parent = U256::from(id);
-                TotalHotkeyAlpha::<Test>::insert(parent, netuid, AlphaBalance::from(id * 1_000));
-                TotalHotkeyAlpha::<Test>::insert(parent, NetUid::ROOT, AlphaBalance::from(id * 7));
-                ChildKeys::<Test>::insert(
-                    parent,
-                    netuid,
-                    vec![(u64::MAX / 3, U256::from(0)), (u64::MAX / 3, U256::from(1))],
-                );
-                (u64::MAX / 3, parent)
-            })
-            .collect::<Vec<_>>();
-        // Eight distinct external parents exceed the four-UID cache capacity.
-        ParentKeys::<Test>::insert(U256::from(0), netuid, &parents);
-        ParentKeys::<Test>::insert(U256::from(1), netuid, &parents);
-        assert_eq!(
-            SubtensorModule::get_null_stake_weights_for_network(netuid),
-            SubtensorModule::get_stake_weights_for_network(netuid),
-        );
-        for id in [100, 107] {
-            TotalHotkeyAlpha::<Test>::insert(U256::from(id), netuid, AlphaBalance::from(u64::MAX));
-        }
-        assert_eq!(
-            SubtensorModule::get_null_stake_weights_for_network(netuid),
-            SubtensorModule::get_stake_weights_for_network(netuid),
-        );
-    });
-}
-
-#[test]
 fn null_consensus_winner_incentives_and_stake_dividends_ignore_activity() {
     new_test_ext(1).execute_with(|| {
         let netuid = setup([300_000_000, 100_000_000]);

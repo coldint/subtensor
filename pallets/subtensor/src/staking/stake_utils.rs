@@ -321,8 +321,8 @@ impl<T: Config> Pallet<T> {
 
     /// Null stake election uses the same inherited-stake arithmetic as Yuma,
     /// but loads registered balances once and shares delegation inputs between
-    /// alpha and root stake. Registered and external balance caches are each
-    /// bounded by the registered population and live only for this calculation.
+    /// alpha and root stake. The cache is bounded by the registered population;
+    /// external parents are read directly rather than retained in the cache.
     pub(crate) fn get_null_stake_weights_for_network(
         netuid: NetUid,
     ) -> (Vec<I64F64>, Vec<I64F64>, Vec<I64F64>) {
@@ -351,10 +351,6 @@ impl<T: Config> Pallet<T> {
             .collect();
         let mut alpha_stake = Vec::with_capacity(n as usize);
         let mut tao_stake = Vec::with_capacity(n as usize);
-        // External parents can be shared by many registered children. Retain at
-        // most one population's worth of raw balances; further distinct parents
-        // still contribute through uncached reads. No cache survives settlement.
-        let mut external_balances = BTreeMap::new();
         for maybe_hotkey in &hotkeys {
             let Some(hotkey) = maybe_hotkey else {
                 alpha_stake.push(I64F64::saturating_from_num(0));
@@ -375,12 +371,9 @@ impl<T: Config> Pallet<T> {
             let mut alpha_from_parents = U96F32::saturating_from_num(0);
             let mut tao_from_parents = U96F32::saturating_from_num(0);
             for (proportion, parent) in Self::get_parents(hotkey, netuid) {
-                let (parent_alpha, parent_tao) = balances
-                    .get(&parent)
-                    .or_else(|| external_balances.get(&parent))
-                    .copied()
-                    .unwrap_or_else(|| {
-                        let raw_balances = (
+                let (parent_alpha, parent_tao) =
+                    balances.get(&parent).copied().unwrap_or_else(|| {
+                        (
                             U96F32::saturating_from_num(Self::get_stake_for_hotkey_on_subnet(
                                 &parent, netuid,
                             )),
@@ -388,11 +381,7 @@ impl<T: Config> Pallet<T> {
                                 &parent,
                                 NetUid::ROOT,
                             )),
-                        );
-                        if external_balances.len() < usize::from(n) {
-                            external_balances.insert(parent.clone(), raw_balances);
-                        }
-                        raw_balances
+                        )
                     });
                 let fraction = U96F32::saturating_from_num(proportion)
                     .safe_div(U96F32::saturating_from_num(u64::MAX));
@@ -755,37 +744,15 @@ impl<T: Config> Pallet<T> {
         if amount.is_zero() {
             return;
         }
-        Self::credit_epoch_owner_emission_for_mode(
-            hotkey,
-            coldkey,
-            netuid,
-            amount,
-            Self::get_epoch_consensus(netuid) == EpochConsensus::Null,
-        );
-    }
-
-    /// Payout loops may reuse the epoch's fixed consensus mode. Pool membership
-    /// and balances remain live reads because preceding payouts can change them.
-    pub(crate) fn credit_epoch_owner_emission_for_mode(
-        hotkey: &T::AccountId,
-        coldkey: &T::AccountId,
-        netuid: NetUid,
-        amount: AlphaBalance,
-        is_null: bool,
-    ) {
-        if amount.is_zero() {
-            return;
-        }
-        if is_null
+        if Self::get_epoch_consensus(netuid) == EpochConsensus::Null
             && !TotalHotkeyShares::<T>::contains_key(hotkey, netuid)
             && !Alpha::<T>::contains_key((hotkey, coldkey, netuid))
             && StakingHotkeys::<T>::get(coldkey).contains(hotkey)
         {
             let mut pool = Self::get_alpha_share_pool(hotkey.clone(), netuid);
-            // Membership was checked above, so the general fallback need not
-            // reload the staking index or the pool inputs after a failed probe.
-            pool.credit_member(coldkey, amount.to_u64());
-            return;
+            if pool.try_credit_sole_member(coldkey, amount.to_u64()) {
+                return;
+            }
         }
         Self::increase_stake_for_hotkey_and_coldkey_on_subnet(hotkey, coldkey, netuid, amount);
     }
