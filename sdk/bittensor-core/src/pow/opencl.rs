@@ -4,11 +4,15 @@
 use super::{seal, validate_batch, Solution, PREFIX_LEN};
 use libloading::Library;
 use sp_core::U256;
-use std::{ffi::c_void, ptr, sync::Arc};
+use std::{
+    ffi::{c_char, c_void},
+    ptr,
+    sync::Arc,
+};
 
 type Handle = *mut c_void;
 type Status = i32;
-type Notify = Option<unsafe extern "C" fn(*const i8, *const c_void, usize, *mut c_void)>;
+type Notify = Option<unsafe extern "C" fn(*const c_char, *const c_void, usize, *mut c_void)>;
 
 macro_rules! opencl_api {
     ($( $name:ident : $ty:ty ),* $(,)?) => {
@@ -55,10 +59,10 @@ opencl_api! {
     clGetDeviceInfo: unsafe extern "C" fn(Handle, u32, usize, *mut c_void, *mut usize) -> Status,
     clCreateContext: unsafe extern "C" fn(*const isize, u32, *const Handle, Notify, *mut c_void, *mut Status) -> Handle,
     clCreateCommandQueue: unsafe extern "C" fn(Handle, Handle, u64, *mut Status) -> Handle,
-    clCreateProgramWithSource: unsafe extern "C" fn(Handle, u32, *const *const i8, *const usize, *mut Status) -> Handle,
-    clBuildProgram: unsafe extern "C" fn(Handle, u32, *const Handle, *const i8, Option<unsafe extern "C" fn(Handle, *mut c_void)>, *mut c_void) -> Status,
+    clCreateProgramWithSource: unsafe extern "C" fn(Handle, u32, *const *const c_char, *const usize, *mut Status) -> Handle,
+    clBuildProgram: unsafe extern "C" fn(Handle, u32, *const Handle, *const c_char, Option<unsafe extern "C" fn(Handle, *mut c_void)>, *mut c_void) -> Status,
     clGetProgramBuildInfo: unsafe extern "C" fn(Handle, Handle, u32, usize, *mut c_void, *mut usize) -> Status,
-    clCreateKernel: unsafe extern "C" fn(Handle, *const i8, *mut Status) -> Handle,
+    clCreateKernel: unsafe extern "C" fn(Handle, *const c_char, *mut Status) -> Handle,
     clCreateBuffer: unsafe extern "C" fn(Handle, u64, usize, *mut c_void, *mut Status) -> Handle,
     clSetKernelArg: unsafe extern "C" fn(Handle, u32, usize, *const c_void) -> Status,
     clEnqueueWriteBuffer: unsafe extern "C" fn(Handle, Handle, u32, usize, usize, *const c_void, u32, *const Handle, *mut Handle) -> Status,
@@ -211,7 +215,7 @@ impl Worker {
         };
         let mut status = 0;
         let source = include_str!("kernel.cl");
-        let source_ptr = source.as_ptr().cast::<i8>();
+        let source_ptr = source.as_ptr().cast::<c_char>();
         let length = source.len();
         // SAFETY: handles are retained in Worker and released even on partial
         // initialization failure. All source strings and lengths remain valid.
